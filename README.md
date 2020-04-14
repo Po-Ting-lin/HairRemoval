@@ -1,7 +1,8 @@
 # HairRemoval
 
-* image
+* image  
 ![](/sample/image.png)
 
-* result
+
+* result  
 ![](/sample/afterimage.png)
