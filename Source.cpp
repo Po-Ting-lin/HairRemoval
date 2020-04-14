@@ -1,7 +1,5 @@
 #include<iostream>
 #include<opencv2/opencv.hpp>
-#include<Dense>
-#include<string>
 #include <ctime>
 #include<omp.h>
 #include"HairRemoval.h"
@@ -26,7 +24,7 @@ void displayImage(const cv::Mat& image, const char* name, bool mag) {
 
 int main() {
 	Mat image, output;
-	image = imread(R"(C:\Users\brian.AMO\Desktop\test.png)");
+	image = imread(R"(path\for\testing)");
 
 	if (!image.data) {
 		cout << "Error: the image wasn't correctly loaded." << endl;
