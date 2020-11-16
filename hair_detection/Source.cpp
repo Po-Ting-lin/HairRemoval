@@ -3,7 +3,7 @@
 
 int main() {
 	cv::Mat image, output;
-	image = cv::imread(R"(C:\Users\c1c4c\Desktop\Po_ting_lin_GitHub\hair_detection\hair_detection\IMG_0016.jpg)");
+	image = cv::imread(R"(IMG_0016.jpg)");
 
 	if (!image.data) {
 		std::cout << "Error: the image wasn't correctly loaded." << std::endl;

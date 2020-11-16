@@ -270,8 +270,6 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     
     //TestSumMatrix();
     auto t8 = std::chrono::system_clock::now();
-    //Test666();
-    
 
 
     auto t6 = std::chrono::system_clock::now();
