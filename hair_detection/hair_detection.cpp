@@ -92,19 +92,19 @@ void grayLevelCoOccurrenceMatrix(cv::Mat& src, cv::Mat& dst) {
 
 int entropyThesholding(cv::Mat& glcm) {
     int bestT = 0;
-    double minLCM = DBL_MAX;
+    float minLCM = FLT_MAX;
     float* glcmPtr = (float*)glcm.data;
 
-#pragma omp parallel for
+//#pragma omp parallel for
     for (int threshold = 0; threshold < CV_8U_DYNAMICRANGE; threshold++) {
         const int rows = glcm.rows;
         const int cols = glcm.cols;
-        double pA = 0.0;
-        double pC = 0.0;
-        double meanA = 0.0;
-        double meanC = 0.0;
-        double entropyA = 0.0;
-        double entropyC = 0.0;
+        float pA = 0.0f;
+        float pC = 0.0f;
+        float meanA = 0.0f;
+        float meanC = 0.0f;
+        float entropyA = 0.0f;
+        float entropyC = 0.0f;
         float* curptr = nullptr;
 
         // pA
@@ -127,16 +127,20 @@ int entropyThesholding(cv::Mat& glcm) {
         for (int r = 0; r < threshold + 1; r++) {
             for (int c = 0; c < threshold + 1; c++) {
                 curptr = glcmPtr + (r * cols + c);
-                meanA += ((double)r) * ((double)c) * (*curptr);
+                meanA += ((float)r) * ((float)c) * (*curptr);
             }
         }
         meanA /= pA;
+
+        //if (threshold == 1) {
+        //    int aa = 1;
+        //}
 
         // meanC
         for (int r = threshold + 1; r < CV_8U_DYNAMICRANGE; r++) {
             for (int c = threshold + 1; c < CV_8U_DYNAMICRANGE; c++) {
                 curptr = glcmPtr + (r * cols + c);
-                meanC += ((double)r) * ((double)c) * (*curptr);
+                meanC += ((float)r) * ((float)c) * (*curptr);
             }
         }
         meanC /= pC;
@@ -146,8 +150,8 @@ int entropyThesholding(cv::Mat& glcm) {
         for (int r = 0; r < threshold + 1; r++) {
             for (int c = 0; c < threshold + 1; c++) {
                 curptr = glcmPtr + (r * cols + c);
-                entropyA += ((double)r) * ((double)c) * (*curptr) * log2((((double)r) * ((double)c) + EPSILON) / (meanA + EPSILON));
-                entropyA += meanA * (*curptr) * log2(meanA / (((double)r) + EPSILON) / (((double)c) + EPSILON) + EPSILON);
+                entropyA += ((float)r) * ((float)c) * (*curptr) * log2((((float)r) * ((float)c) + EPSILON) / (meanA + EPSILON));
+                entropyA += meanA * (*curptr) * log2(meanA / (((float)r) + EPSILON) / (((float)c) + EPSILON) + EPSILON);
             }
         }
 
@@ -155,13 +159,18 @@ int entropyThesholding(cv::Mat& glcm) {
         for (int r = threshold + 1; r < CV_8U_DYNAMICRANGE; r++) {
             for (int c = threshold + 1; c < CV_8U_DYNAMICRANGE; c++) {
                 curptr = glcmPtr + (r * cols + c);
-                entropyC += ((double)r) * ((double)c) * (*curptr) * log2((((double)r) * ((double)c) + EPSILON) / (meanC + EPSILON));
-                entropyC += meanC * (*curptr) * log2(meanC / (((double)r) + EPSILON) / (((double)c) + EPSILON) + EPSILON);
+                entropyC += ((float)r) * ((float)c) * (*curptr) * log2((((float)r) * ((float)c) + EPSILON) / (meanC + EPSILON));
+                entropyC += meanC * (*curptr) * log2(meanC / (((float)r) + EPSILON) / (((float)c) + EPSILON) + EPSILON);
             }
         }
 
-#pragma omp critical
+        if (threshold == 1) {
+            int aa = 1;
+        }
+
+//#pragma omp critical
         {
+            printf("i: %d, A:%f, C: %f, AC: %f\n", threshold, entropyA, entropyC, entropyA + entropyC);
             if (minLCM > entropyA + entropyC) {
                 bestT = threshold;
                 minLCM = entropyA + entropyC;
@@ -263,15 +272,10 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
 
     auto t5 = std::chrono::system_clock::now();
     //cv::threshold(mask, mask, entropyThesholding(glcm), CV_8U_DYNAMICRANGE - 1, 0);
-    //cv::threshold(mask, mask, entropyThesholdingGPU(glcm), CV_8U_DYNAMICRANGE - 1, 0);
-    cv::threshold(mask, mask, 116, CV_8U_DYNAMICRANGE - 1, 0);
-    entropyThesholdingGPU2(glcm);
+    cv::threshold(mask, mask, entropyThesholdingGPU(glcm), CV_8U_DYNAMICRANGE - 1, 0);
+    //Test6(glcm);
     glcm.release();
-    
-    //TestSumMatrix();
-    auto t8 = std::chrono::system_clock::now();
-
-
+        
     auto t6 = std::chrono::system_clock::now();
     cleanIsolatedComponent(mask, para);
 
@@ -284,7 +288,6 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     printTime(t4, t5, "glcm_cal");
     printTime(t5, t6, "entropyThesholding");
     printTime(t6, t7, "cleanIsolatedComponent");
-    printTime(t8, t6, "TEst666");
 
     return true;
 }

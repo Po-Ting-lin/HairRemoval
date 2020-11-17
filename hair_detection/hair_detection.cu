@@ -4,7 +4,7 @@
 
 #define TILE_DIM 32
 #define BLOCK_DIM 8
-#define EPSILON 1e-6
+#define EPSILON 1e-8
 
 __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int nx, int ny, int nz) {
     int x = threadIdx.x + TILE_DIM * blockIdx.x;
@@ -33,74 +33,6 @@ __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int
 
         // set pixel to DRAM
         *(dst + (y + i) * nx + x) = L;
-    }
-}
-
-// very inefficient, frequently load from DRAM 
-__global__ void entropyCalculationKernel(float* glcmA, float* glcmC, float* eA, float* eC, int dynamic) {
-    int gid = threadIdx.x + blockDim.x * blockIdx.x;
-
-    if (gid < dynamic) {
-        float pA = 0.0f;
-        float meanA = 0.0f;
-        float entropyA = 0.0f;
-        int tA = gid;
-        // pA
-        for (int r = 0; r < tA + 1; r++) {
-            for (int c = 0; c < tA + 1; c++) {
-                pA += *(glcmA + r * dynamic + c);
-            }
-        }
-
-        // meanA
-        for (int r = 0; r < tA + 1; r++) {
-            for (int c = 0; c < tA + 1; c++) {
-                meanA += ((float)r) * ((float)c) * (*(glcmA + r * dynamic + c));
-            }
-        }
-        meanA /= pA;
-
-        // entropyA
-        for (int r = 0; r < tA + 1; r++) {
-            for (int c = 0; c < tA + 1; c++) {
-                float raw = (*(glcmA + r * dynamic + c));
-                entropyA += ((float)r) * ((float)c) * raw * log2f((((float)r) * ((float)c) + EPSILON) / (meanA + EPSILON));
-                entropyA += meanA * raw * log2f(meanA / (((float)r) + EPSILON) / (((float)c) + EPSILON) + EPSILON);
-            }
-        }
-
-        eA[tA] = entropyA;
-    }
-    else {
-        float pC = 0.0;
-        float meanC = 0.0;
-        float entropyC = 0.0f;
-        int tC = gid - dynamic;
-        // pC
-        for (int r = tC + 1; r < dynamic; r++) {
-            for (int c = tC + 1; c < dynamic; c++) {
-                pC += *(glcmC + r * dynamic + c);
-            }
-        }
-
-        // meanC
-        for (int r = tC + 1; r < dynamic; r++) {
-            for (int c = tC + 1; c < dynamic; c++) {
-                meanC += ((float)r) * ((float)c) * (*(glcmC + r * dynamic + c));
-            }
-        }
-        meanC /= pC;
-
-        // entropyC
-        for (int r = tC + 1; r < dynamic; r++) {
-            for (int c = tC + 1; c < dynamic; c++) {
-                float raw = (*(glcmC + r * dynamic + c));
-                entropyC += ((float)r) * ((float)c) * raw * log2f((((float)r) * ((float)c) + EPSILON) / (meanC + EPSILON));
-                entropyC += meanC * raw * log2f(meanC / (((float)r) + EPSILON) / (((float)c) + EPSILON) + EPSILON);
-            }
-        }
-
-        eC[tC] = entropyC;
     }
 }
 
@@ -298,119 +230,6 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     //printTime(t11, t12, "free");
 }
 
-
-
-int entropyThesholdingGPU(cv::Mat& glcm) {
-    int dynamic_range = 256;
-    float
-        * h_eA,
-        * h_eC;
-    float
-        * d_glcmA,
-        * d_glcmC,
-        * d_eA,
-        * d_eC;
-    float* src_ptr = (float*)glcm.data;
-
-    h_eA = (float*)malloc(dynamic_range * sizeof(float*));
-    h_eC = (float*)malloc(dynamic_range * sizeof(float*));
-    gpuErrorCheck(cudaMalloc((void**)&d_glcmA, dynamic_range * dynamic_range * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_glcmC, dynamic_range * dynamic_range * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_eA, dynamic_range * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_eC, dynamic_range * sizeof(float)));
-    gpuErrorCheck(cudaMemcpy(d_glcmA, src_ptr, dynamic_range * dynamic_range * sizeof(float), cudaMemcpyHostToDevice));
-    gpuErrorCheck(cudaMemcpy(d_glcmC, d_glcmA, dynamic_range * dynamic_range * sizeof(float), cudaMemcpyDeviceToDevice));
-
-    dim3 block(TILE_DIM);
-    dim3 grid(iDivUp(dynamic_range*2, TILE_DIM)); // 512 threads
-
-    entropyCalculationKernel << <grid, block >> > (d_glcmA, d_glcmC, d_eA, d_eC, dynamic_range);
-    gpuErrorCheck(cudaDeviceSynchronize());
-
-    gpuErrorCheck(cudaMemcpy(h_eA, d_eA, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
-    gpuErrorCheck(cudaMemcpy(h_eC, d_eC, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
-
-    int bestT = 0;
-    float minLCM = FLT_MAX;
-
-    for (int t = 0; t < dynamic_range; t++) {
-        if (minLCM > h_eA[t] + h_eC[t]) {
-            bestT = t;
-            minLCM = h_eA[t] + h_eC[t];
-        }
-    }
-
-    gpuErrorCheck(cudaFree(d_glcmA));
-    gpuErrorCheck(cudaFree(d_glcmC));
-    gpuErrorCheck(cudaFree(d_eA));
-    gpuErrorCheck(cudaFree(d_eC));
-    free(h_eA);
-    free(h_eC);
-    gpuErrorCheck(cudaDeviceReset());
-
-    return bestT;
-}
-
-void TestSumMatrix() {
-    float
-        * h_data,
-        * h_test,
-        * h_sum_matrix;
-    float
-        * d_data,
-        * d_sum_matrix;
-
-    float ref = 0;
-    int raw_width = 32;
-    int width = GetClosedWidth(raw_width);
-
-    dim3 pre_sum_block(TILE_DIM, TILE_DIM);
-    dim3 pre_sum_grid(iDivUp(raw_width, TILE_DIM), iDivUp(raw_width, TILE_DIM));
-    dim3 sum_block(TILE_DIM, TILE_DIM);
-    dim3 sum_grid(width / TILE_DIM, width / TILE_DIM);
-    
-    h_data = (float*)malloc(raw_width * raw_width * sizeof(float*));
-    h_test = (float*)malloc(raw_width * raw_width * sizeof(float*));
-    h_sum_matrix = (float*)malloc(sum_grid.x * sum_grid.x * sizeof(float*));
-
-    for (int i = 0; i < raw_width * raw_width; i++) {
-        h_data[i] = ((float)i / 100.0f);
-        ref += ((float)i / 100.0f);
-    }
-    //Display2DArray(h_data, raw_width, raw_width);
-    //std::cout << std::endl;
-    
-    gpuErrorCheck(cudaMalloc((void**)&d_data, raw_width * raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_sum_matrix, sum_grid.x * sum_grid.x * sizeof(float)));
-    gpuErrorCheck(cudaMemcpy(d_data, h_data, raw_width * raw_width * sizeof(float), cudaMemcpyHostToDevice));
-
-    // presum
-    if (raw_width != width){
-        PreSumXMatrix << <pre_sum_grid, pre_sum_block >> > (d_data, raw_width, raw_width, width);
-        gpuErrorCheck(cudaDeviceSynchronize());
-        PreSumYMatrix << <pre_sum_grid, pre_sum_block >> > (d_data, raw_width, raw_width, width);
-        gpuErrorCheck(cudaDeviceSynchronize());
-    }
-    SumMatirx << <sum_grid, sum_block >> > (d_data, raw_width, width, d_sum_matrix);
-    gpuErrorCheck(cudaDeviceSynchronize());
-
-    gpuErrorCheck(cudaMemcpy(h_sum_matrix, d_sum_matrix, sum_grid.x * sum_grid.x * sizeof(float), cudaMemcpyDeviceToHost));
-
-    float result = 0.0f;
-    for (int i = 0; i < sum_grid.x * sum_grid.x; i++) {
-        result += h_sum_matrix[i];
-    }
-
-    printf("ref: %f, gpu: %f\n", ref, result);
-
-    gpuErrorCheck(cudaFree(d_data));
-    gpuErrorCheck(cudaFree(d_sum_matrix));
-    free(h_data);
-    free(h_sum_matrix);
-    gpuErrorCheck(cudaDeviceReset());
-    return;
-}
-
 int GetClosedWidth(int width){
     int number = (int)log2(width);
     return pow(2, number);
@@ -576,70 +395,70 @@ void Test666() {
     gpuErrorCheck(cudaMalloc((void**)&d_eA, raw_width * sizeof(float)));
     gpuErrorCheck(cudaMemcpy(d_data, h_data, raw_width * raw_width * sizeof(float), cudaMemcpyHostToDevice));
 
-    GetPAArray(d_data, 256, d_pA);
+    GetPArray(d_data, 256, d_pA);
     //gpuErrorCheck(cudaMemcpy(h_pA, d_pA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
 
-    GetMAArray(d_data, 256, d_pA, d_mA);
+    GetMArray(d_data, 256, d_pA, d_mA);
     //gpuErrorCheck(cudaMemcpy(h_mA, d_mA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
 
-    GetEAArray(d_data, 256, d_mA, d_eA);
-    //gpuErrorCheck(cudaMemcpy(h_eA, d_eA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
+    GetEArray(d_data, 256, d_mA, d_eA);
+    gpuErrorCheck(cudaMemcpy(h_eA, d_eA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
 
-    //// check pA
-    //float* pA_ref;
-    //pA_ref = (float*)malloc(raw_width * sizeof(float*));
-    //for (int t = 0; t < raw_width; t++) {
-    //    float pa_sum = 0.0f;
-    //    for (int x = 0; x < t + 1; x++) {
-    //        for (int y = 0; y < t + 1; y++) {
-    //            pa_sum += h_data[y * raw_width + x];
-    //        }
-    //    }
-    //    pA_ref[t] = pa_sum;
-    //}
-    //for (int i = 0; i < raw_width; i++) {
-    //    //printf("ref: %f, gpu: %f\n", pA_ref[i], h_pA[i]);
-    //}
-    //
-    //// check mA
-    //float* mA_ref;
-    //mA_ref = (float*)malloc(raw_width * sizeof(float*));
-    //for (int t = 0; t < raw_width; t++) {
-    //    float ma_sum = 0.0f;
-    //    for (int x = 0; x < t + 1; x++) {
-    //        for (int y = 0; y < t + 1; y++) {
-    //            ma_sum += h_data[y * raw_width + x] * x * y;
-    //        }
-    //    }
-    //    if (pA_ref[t] != 0.0f) {
-    //        mA_ref[t] = ma_sum / pA_ref[t];
-    //    }
-    //    else {
-    //        mA_ref[t] = 0.0f;
-    //    }
-    //}
-    //for (int i = 0; i < raw_width; i++) {
-    //    //printf("i: %d, ref: %f, gpu: %f\n", i, mA_ref[i], h_mA[i]);
-    //}
+    // check pA
+    float* pA_ref;
+    pA_ref = (float*)malloc(raw_width * sizeof(float*));
+    for (int t = 0; t < raw_width; t++) {
+        float pa_sum = 0.0f;
+        for (int x = 0; x < t + 1; x++) {
+            for (int y = 0; y < t + 1; y++) {
+                pa_sum += h_data[y * raw_width + x];
+            }
+        }
+        pA_ref[t] = pa_sum;
+    }
+    for (int i = 0; i < raw_width; i++) {
+        //printf("ref: %f, gpu: %f\n", pA_ref[i], h_pA[i]);
+    }
+    
+    // check mA
+    float* mA_ref;
+    mA_ref = (float*)malloc(raw_width * sizeof(float*));
+    for (int t = 0; t < raw_width; t++) {
+        float ma_sum = 0.0f;
+        for (int x = 0; x < t + 1; x++) {
+            for (int y = 0; y < t + 1; y++) {
+                ma_sum += h_data[y * raw_width + x] * x * y;
+            }
+        }
+        if (pA_ref[t] != 0.0f) {
+            mA_ref[t] = ma_sum / pA_ref[t];
+        }
+        else {
+            mA_ref[t] = 0.0f;
+        }
+    }
+    for (int i = 0; i < raw_width; i++) {
+        //printf("i: %d, ref: %f, gpu: %f\n", i, mA_ref[i], h_mA[i]);
+    }
 
-    //// check eA
-    //float* eA_ref;
-    //eA_ref = (float*)malloc(raw_width * sizeof(float*));
-    //for (int t = 0; t < raw_width; t++) {
-    //    float ea_sum = 0.0f;
-    //    float meanA = mA_ref[t];
-    //    for (int x = 0; x < t + 1; x++) {
-    //        for (int y = 0; y < t + 1; y++) {
-    //            float p = h_data[y * raw_width + x];
-    //            ea_sum += ((float)x) * ((float)y) * p * log2((((float)x) * ((float)y) + EPSILON) / (meanA + EPSILON));
-    //            ea_sum += meanA * p * log2(meanA / (((float)x) + EPSILON) / (((float)y) + EPSILON) + EPSILON);
-    //        }
-    //    }
-    //    eA_ref[t] = ea_sum;
-    //}
-    //for (int i = 0; i < raw_width; i++) {
-    //    //printf("i: %d, ref: %f, gpu: %f\n", i, eA_ref[i], h_eA[i]);
-    //}
+    // check eA
+    float* eA_ref;
+    eA_ref = (float*)malloc(raw_width * sizeof(float*));
+    for (int t = 0; t < raw_width; t++) {
+        float ea_sum = 0.0f;
+        float meanA = mA_ref[t];
+        for (int x = 0; x < t + 1; x++) {
+            for (int y = 0; y < t + 1; y++) {
+                float p = h_data[y * raw_width + x];
+                ea_sum += ((float)x) * ((float)y) * p * log2((((float)x) * ((float)y) + EPSILON) / (meanA + EPSILON));
+                ea_sum += meanA * p * log2(meanA / (((float)x) + EPSILON) / (((float)y) + EPSILON) + EPSILON);
+            }
+        }
+        eA_ref[t] = ea_sum;
+    }
+    for (int i = 0; i < raw_width; i++) {
+        printf("i: %d, ref: %f, gpu: %f\n", i, eA_ref[i], h_eA[i]);
+    }
 
     gpuErrorCheck(cudaFree(d_data));
     free(h_data);
@@ -647,7 +466,104 @@ void Test666() {
     return;
 }
 
-int entropyThesholdingGPU2(cv::Mat& glcm) {
+void Test6(cv::Mat& glcm) {
+    float
+        * h_data,
+        * h_pA,
+        * h_mA,
+        * h_eA;
+
+    float
+        * d_data,
+        * d_pA,
+        * d_mA,
+        * d_eA;
+
+    int raw_width = 256;
+
+    // init h_data
+    h_data = (float*)glcm.data;
+    h_pA = (float*)malloc(raw_width * sizeof(float*));
+    h_mA = (float*)malloc(raw_width * sizeof(float*));
+    h_eA = (float*)malloc(raw_width * sizeof(float*));
+
+    gpuErrorCheck(cudaMalloc((void**)&d_data, raw_width * raw_width * sizeof(float)));
+    gpuErrorCheck(cudaMalloc((void**)&d_pA, raw_width * sizeof(float)));
+    gpuErrorCheck(cudaMalloc((void**)&d_mA, raw_width * sizeof(float)));
+    gpuErrorCheck(cudaMalloc((void**)&d_eA, raw_width * sizeof(float)));
+    gpuErrorCheck(cudaMemcpy(d_data, h_data, raw_width * raw_width * sizeof(float), cudaMemcpyHostToDevice));
+
+    GetPArray(d_data, 256, d_pA);
+    //gpuErrorCheck(cudaMemcpy(h_pA, d_pA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
+
+    GetMArray(d_data, 256, d_pA, d_mA);
+    //gpuErrorCheck(cudaMemcpy(h_mA, d_mA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
+
+    GetEArray(d_data, 256, d_mA, d_eA);
+    gpuErrorCheck(cudaMemcpy(h_eA, d_eA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
+
+    // check pA
+    float* pA_ref;
+    pA_ref = (float*)malloc(raw_width * sizeof(float*));
+    for (int t = 0; t < raw_width; t++) {
+        float pa_sum = 0.0f;
+        for (int x = 0; x < t + 1; x++) {
+            for (int y = 0; y < t + 1; y++) {
+                pa_sum += h_data[y * raw_width + x];
+            }
+        }
+        pA_ref[t] = pa_sum;
+    }
+    for (int i = 0; i < raw_width; i++) {
+        //printf("ref: %f, gpu: %f\n", pA_ref[i], h_pA[i]);
+    }
+
+    // check mA
+    float* mA_ref;
+    mA_ref = (float*)malloc(raw_width * sizeof(float*));
+    for (int t = 0; t < raw_width; t++) {
+        float ma_sum = 0.0f;
+        for (int x = 0; x < t + 1; x++) {
+            for (int y = 0; y < t + 1; y++) {
+                ma_sum += h_data[y * raw_width + x] * x * y;
+            }
+        }
+        if (pA_ref[t] != 0.0f) {
+            mA_ref[t] = ma_sum / pA_ref[t];
+        }
+        else {
+            mA_ref[t] = 0.0f;
+        }
+    }
+    for (int i = 0; i < raw_width; i++) {
+        //printf("i: %d, ref: %f, gpu: %f\n", i, mA_ref[i], h_mA[i]);
+    }
+
+    // check eA
+    float* eA_ref;
+    eA_ref = (float*)malloc(raw_width * sizeof(float*));
+    for (int t = 0; t < raw_width; t++) {
+        float ea_sum = 0.0f;
+        float meanA = mA_ref[t];
+        for (int x = 0; x < t + 1; x++) {
+            for (int y = 0; y < t + 1; y++) {
+                float p = h_data[y * raw_width + x];
+                ea_sum += ((float)x) * ((float)y) * p * log2((((float)x) * ((float)y) + EPSILON) / (meanA + EPSILON));
+                ea_sum += meanA * p * log2(meanA / (((float)x) + EPSILON) / (((float)y) + EPSILON) + EPSILON);
+            }
+        }
+        eA_ref[t] = ea_sum;
+    }
+    for (int i = 0; i < raw_width; i++) {
+        printf("i: %d, ref: %f, gpu: %f\n", i, eA_ref[i], h_eA[i]);
+    }
+
+    //gpuErrorCheck(cudaFree(d_data));
+    //gpuErrorCheck(cudaDeviceReset());
+    return;
+}
+
+int entropyThesholdingGPU(cv::Mat& glcm) {
     int dynamic_range = 256;
     float
         * h_data,
@@ -668,14 +584,11 @@ int entropyThesholdingGPU2(cv::Mat& glcm) {
 
     h_data = (float*)glcm.data;
     h_reversed_data = (float*)malloc(dynamic_range * dynamic_range * sizeof(float*));
-
-
     h_eA = (float*)malloc(dynamic_range * sizeof(float*));
     h_eC = (float*)malloc(dynamic_range * sizeof(float*));
     h_AC = (float*)malloc(dynamic_range * sizeof(float*));
 
-    int j = dynamic_range * dynamic_range - 1;
-    for (int i = 0; i < dynamic_range * dynamic_range; i++, j--) {
+    for (int i = 0, int j = dynamic_range * dynamic_range - 1; i < dynamic_range * dynamic_range; i++, j--) {
         h_reversed_data[j] = h_data[i];
     }
 
@@ -690,35 +603,50 @@ int entropyThesholdingGPU2(cv::Mat& glcm) {
     gpuErrorCheck(cudaMemcpy(d_data, h_data, dynamic_range * dynamic_range * sizeof(float), cudaMemcpyHostToDevice));
     gpuErrorCheck(cudaMemcpy(d_reversed_data, h_reversed_data, dynamic_range * dynamic_range * sizeof(float), cudaMemcpyHostToDevice));
 
-    GetPAArray(d_data, 256, d_pA);
-    GetMAArray(d_data, 256, d_pA, d_mA);
-    GetEAArray(d_data, 256, d_mA, d_eA);
+    GetPArray(d_data, dynamic_range, d_pA);
+    GetMArray(d_data, dynamic_range, d_pA, d_mA);
+    GetEArray(d_data, dynamic_range, d_mA, d_eA);
 
-    GetPAArray(d_reversed_data, 256, d_pC);
-    GetMAArray(d_reversed_data, 256, d_pC, d_mC);
-    GetEAArray(d_reversed_data, 256, d_mC, d_eC);
+    GetPArray(d_reversed_data, dynamic_range, d_pC);
+    GetMArray(d_reversed_data, dynamic_range, d_pC, d_mC);
+    GetEArray(d_reversed_data, dynamic_range, d_mC, d_eC);
 
     gpuErrorCheck(cudaMemcpy(h_eA, d_eA, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
     gpuErrorCheck(cudaMemcpy(h_eC, d_eC, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
 
-    int jj = dynamic_range - 1;
-    for (int i = 0; i < dynamic_range; i++, jj--) {
-        h_AC[i] = h_eA[i] + h_eC[jj];
-        printf("i: %d, A:%f, C: %f, AC: %f\n", i, h_eA[i], h_eC[jj], h_AC[i]);
+    entropyCPU(h_data, h_eA, dynamic_range);
+    entropyCPU(h_reversed_data, h_eC, dynamic_range);
+
+    float min_value = FLT_MAX;
+    int min_t = -1;
+    for (int i = 0, int j = dynamic_range - 1; i < dynamic_range; i++, j--) {
+        h_AC[i] = h_eA[i] + h_eC[j];
+        printf("i: %d, A:%f, C: %f, AC: %f\n", i, h_eA[i], h_eC[j], h_AC[i]);
+        if (h_AC[i] < min_value) {
+            min_t = i;
+            min_value = h_AC[i];
+        }
     }
 
+    printf("min threshold : %d\n", min_t);
+
     gpuErrorCheck(cudaFree(d_data));
+    gpuErrorCheck(cudaFree(d_reversed_data));
     gpuErrorCheck(cudaFree(d_pA));
     gpuErrorCheck(cudaFree(d_mA));
     gpuErrorCheck(cudaFree(d_eA));
+    gpuErrorCheck(cudaFree(d_pC));
+    gpuErrorCheck(cudaFree(d_mC));
+    gpuErrorCheck(cudaFree(d_eC));
+    free(h_reversed_data);
     free(h_eA);
     free(h_eC);
     free(h_AC);
     gpuErrorCheck(cudaDeviceReset());
-    return 0;
+    return min_t;
 }
 
-void GetPAArray(float* d_data, int full_width, float* d_pA) {
+void GetPArray(float* d_data, int full_width, float* d_pA) {
     float* d_buf;
     gpuErrorCheck(cudaMalloc((void**)&d_buf, full_width * full_width * sizeof(float)));
 
@@ -758,7 +686,7 @@ void GetPAArray(float* d_data, int full_width, float* d_pA) {
     gpuErrorCheck(cudaFree(d_buf));
 }
 
-void GetMAArray(float* d_data, int full_width, float* d_pA, float* d_mA) {
+void GetMArray(float* d_data, int full_width, float* d_pA, float* d_mA) {
     float
         * d_buf,
         * d_data_rc;
@@ -804,7 +732,7 @@ void GetMAArray(float* d_data, int full_width, float* d_pA, float* d_mA) {
     gpuErrorCheck(cudaFree(d_buf));
 }
 
-void GetEAArray(float* d_data, int full_width, float* d_mA, float* d_eA) {
+void GetEArray(float* d_data, int full_width, float* d_mA, float* d_eA) {
     float
         * d_buf,
         * d_data_computed;
@@ -852,4 +780,42 @@ void GetEAArray(float* d_data, int full_width, float* d_mA, float* d_eA) {
     }
 
     gpuErrorCheck(cudaFree(d_buf));
+}
+
+void entropyCPU(float* h_data, float* h_e, int width) {
+#pragma omp parallel for
+    for (int threshold = 0; threshold < TILE_DIM - 1; threshold++) {
+        const int cols = width;
+        float p = 0.0;
+        float mean = 0.0;
+        float entropy = 0.0;
+
+        // pA
+        for (int r = 0; r < threshold + 1; r++) {
+            for (int c = 0; c < threshold + 1; c++) {
+                p += h_data[r * cols + c];
+            }
+        }
+
+        // meanA
+        for (int r = 0; r < threshold + 1; r++) {
+            for (int c = 0; c < threshold + 1; c++) {
+                mean += ((float)r) * ((float)c) * h_data[r * cols + c];
+            }
+        }
+        mean /= p;
+
+        // entropyA
+        for (int r = 0; r < threshold + 1; r++) {
+            for (int c = 0; c < threshold + 1; c++) {
+                entropy += ((float)r) * ((float)c) * h_data[r * cols + c] * log2((((float)r) * ((float)c) + EPSILON) / (mean + EPSILON));
+                entropy += mean * h_data[r * cols + c] * log2(mean / (((float)r) + EPSILON) / (((float)c) + EPSILON) + EPSILON);
+            }
+        }
+
+        //if (threshold == 1) {
+        //    int aa = 1;
+        //}
+        h_e[threshold] = entropy;
+    }
 }
