@@ -13,7 +13,7 @@ int main() {
 	//displayImage(image, "image", false);
 
 	///*******************************************************/
-	bool isGPU = true;
+	bool isGPU = false;
 	auto start = std::chrono::system_clock::now();
 	hairDetection(image, output, isGPU);
 	auto end = std::chrono::system_clock::now();

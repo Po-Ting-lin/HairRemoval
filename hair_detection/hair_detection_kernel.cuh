@@ -18,13 +18,12 @@ __global__ void PreSumYMatrix(float* src, int nx, int tx, int multiplex);
 __global__ void SumMatirx(float* src, int nx, int tx, float* sum);
 __global__ void SumSumAMatrix(float* sum_matrix, float* d_pA, int sum_matrix_size, int threshold);
 __global__ void SumSumMMatrix(float* sum_matrix, float* d_pA, float* d_mA, int sum_matrix_size, int threshold);
-__global__ void ComputeEntropyMatrixKernel(float* d_data_computed, float* d_data, int nx, float* d_mA, int threshold);
+__global__ void ComputeEntropyMatrixKernel(float* d_data_computed, float* d_data, int nx, float* d_mA, int threshold, bool reversed);
+__global__ void MultiplyRC(float* d_data_rc, float* d_data, int nx, bool reversed);
 
-void Test666();
 int entropyThesholdingGPU(cv::Mat& glcm);
 int GetClosedWidth(int width);
 void GetPArray(float* d_data, int full_width, float* d_pA);
-void GetMArray(float* d_data, int full_width, float* d_pA, float* d_mA);
-void GetEArray(float* d_data, int full_width, float* d_mA, float* d_eA);
+void GetMArray(float* d_data, int full_width, float* d_pA, float* d_mA, bool reversed);
+void GetEArray(float* d_data, int full_width, float* d_mA, float* d_eA, bool reversed);
 void entropyCPU(float* h_data, float* h_e, int width);
-void Test6(cv::Mat& glcm);

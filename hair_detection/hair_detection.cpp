@@ -95,7 +95,7 @@ int entropyThesholding(cv::Mat& glcm) {
     float minLCM = FLT_MAX;
     float* glcmPtr = (float*)glcm.data;
 
-//#pragma omp parallel for
+#pragma omp parallel for
     for (int threshold = 0; threshold < CV_8U_DYNAMICRANGE; threshold++) {
         const int rows = glcm.rows;
         const int cols = glcm.cols;
@@ -132,10 +132,6 @@ int entropyThesholding(cv::Mat& glcm) {
         }
         meanA /= pA;
 
-        //if (threshold == 1) {
-        //    int aa = 1;
-        //}
-
         // meanC
         for (int r = threshold + 1; r < CV_8U_DYNAMICRANGE; r++) {
             for (int c = threshold + 1; c < CV_8U_DYNAMICRANGE; c++) {
@@ -168,9 +164,8 @@ int entropyThesholding(cv::Mat& glcm) {
             int aa = 1;
         }
 
-//#pragma omp critical
+#pragma omp critical
         {
-            printf("i: %d, A:%f, C: %f, AC: %f\n", threshold, entropyA, entropyC, entropyA + entropyC);
             if (minLCM > entropyA + entropyC) {
                 bestT = threshold;
                 minLCM = entropyA + entropyC;
@@ -271,9 +266,13 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     grayLevelCoOccurrenceMatrix(mask, glcm);
 
     auto t5 = std::chrono::system_clock::now();
-    //cv::threshold(mask, mask, entropyThesholding(glcm), CV_8U_DYNAMICRANGE - 1, 0);
-    cv::threshold(mask, mask, entropyThesholdingGPU(glcm), CV_8U_DYNAMICRANGE - 1, 0);
-    //Test6(glcm);
+
+    if (isGPU) {
+        cv::threshold(mask, mask, entropyThesholdingGPU(glcm), CV_8U_DYNAMICRANGE - 1, 0);
+    }
+    else {
+        cv::threshold(mask, mask, entropyThesholding(glcm), CV_8U_DYNAMICRANGE - 1, 0);
+    }
     glcm.release();
         
     auto t6 = std::chrono::system_clock::now();

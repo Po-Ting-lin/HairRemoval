@@ -342,225 +342,30 @@ __global__ void SumSumMMatrix(float* sum_matrix, float *d_pA, float* d_mA, int s
     }
 }
 
-__global__ void MultiplyRC(float* d_data_rc, float* d_data, int nx) {
+__global__ void MultiplyRC(float* d_data_rc, float* d_data, int nx, bool reversed) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int cx = reversed ? nx - x - 1 : x;
+    int cy = reversed ? nx - y - 1 : y;
 
     if (x < nx && y < nx) {
-        d_data_rc[y * nx + x] = d_data[y * nx + x] * x * y;
+        d_data_rc[y * nx + x] = d_data[y * nx + x] * cx * cy;
     }
 }
 
-__global__ void ComputeEntropyMatrixKernel(float* d_data_computed, float* d_data, int nx, float* d_mA, int threshold) {
+__global__ void ComputeEntropyMatrixKernel(float* d_data_computed, float* d_data, int nx, float* d_mA, int threshold, bool reversed) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int cx = reversed ? nx - x - 1 : x;
+    int cy = reversed ? nx - y - 1 : y;
 
     if (x < nx && y < nx) {
         float meanA = d_mA[threshold];
         float p = d_data[y * nx + x];
-        float value = p * x * y * log2f(((float)x * y + EPSILON) / (meanA + EPSILON));
-        value += meanA * p * log2f(meanA / ((float)x + EPSILON) / ((float)y + EPSILON) + EPSILON);
+        float value = p * cx * cy * log2f(((float)cx * cy + EPSILON) / (meanA + EPSILON));
+        value += meanA * p * log2f(meanA / ((float)cx + EPSILON) / ((float)cy + EPSILON) + EPSILON);
         d_data_computed[y * nx + x] = value;
     }
-}
-
-void Test666() {
-    float
-        * h_data,
-        * h_pA,
-        * h_mA,
-        * h_eA;
-
-    float
-        * d_data,
-        * d_pA,
-        * d_mA,
-        * d_eA;
-
-    int raw_width = 256;
-
-    // init h_data
-    h_data = (float*)malloc(raw_width * raw_width * sizeof(float*));
-    h_pA = (float*)malloc(raw_width * sizeof(float*));
-    h_mA = (float*)malloc(raw_width * sizeof(float*));
-    h_eA = (float*)malloc(raw_width * sizeof(float*));
-    for (int i = 0; i < raw_width * raw_width; i++) {
-        h_data[i] = getRand() / 1000.0f;
-    }
-    //Display2DArray(h_data, raw_width, raw_width);
-    //std::cout << std::endl;
-    gpuErrorCheck(cudaMalloc((void**)&d_data, raw_width * raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_pA, raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_mA, raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_eA, raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMemcpy(d_data, h_data, raw_width * raw_width * sizeof(float), cudaMemcpyHostToDevice));
-
-    GetPArray(d_data, 256, d_pA);
-    //gpuErrorCheck(cudaMemcpy(h_pA, d_pA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
-
-    GetMArray(d_data, 256, d_pA, d_mA);
-    //gpuErrorCheck(cudaMemcpy(h_mA, d_mA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
-
-    GetEArray(d_data, 256, d_mA, d_eA);
-    gpuErrorCheck(cudaMemcpy(h_eA, d_eA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
-
-    // check pA
-    float* pA_ref;
-    pA_ref = (float*)malloc(raw_width * sizeof(float*));
-    for (int t = 0; t < raw_width; t++) {
-        float pa_sum = 0.0f;
-        for (int x = 0; x < t + 1; x++) {
-            for (int y = 0; y < t + 1; y++) {
-                pa_sum += h_data[y * raw_width + x];
-            }
-        }
-        pA_ref[t] = pa_sum;
-    }
-    for (int i = 0; i < raw_width; i++) {
-        //printf("ref: %f, gpu: %f\n", pA_ref[i], h_pA[i]);
-    }
-    
-    // check mA
-    float* mA_ref;
-    mA_ref = (float*)malloc(raw_width * sizeof(float*));
-    for (int t = 0; t < raw_width; t++) {
-        float ma_sum = 0.0f;
-        for (int x = 0; x < t + 1; x++) {
-            for (int y = 0; y < t + 1; y++) {
-                ma_sum += h_data[y * raw_width + x] * x * y;
-            }
-        }
-        if (pA_ref[t] != 0.0f) {
-            mA_ref[t] = ma_sum / pA_ref[t];
-        }
-        else {
-            mA_ref[t] = 0.0f;
-        }
-    }
-    for (int i = 0; i < raw_width; i++) {
-        //printf("i: %d, ref: %f, gpu: %f\n", i, mA_ref[i], h_mA[i]);
-    }
-
-    // check eA
-    float* eA_ref;
-    eA_ref = (float*)malloc(raw_width * sizeof(float*));
-    for (int t = 0; t < raw_width; t++) {
-        float ea_sum = 0.0f;
-        float meanA = mA_ref[t];
-        for (int x = 0; x < t + 1; x++) {
-            for (int y = 0; y < t + 1; y++) {
-                float p = h_data[y * raw_width + x];
-                ea_sum += ((float)x) * ((float)y) * p * log2((((float)x) * ((float)y) + EPSILON) / (meanA + EPSILON));
-                ea_sum += meanA * p * log2(meanA / (((float)x) + EPSILON) / (((float)y) + EPSILON) + EPSILON);
-            }
-        }
-        eA_ref[t] = ea_sum;
-    }
-    for (int i = 0; i < raw_width; i++) {
-        printf("i: %d, ref: %f, gpu: %f\n", i, eA_ref[i], h_eA[i]);
-    }
-
-    gpuErrorCheck(cudaFree(d_data));
-    free(h_data);
-    gpuErrorCheck(cudaDeviceReset());
-    return;
-}
-
-void Test6(cv::Mat& glcm) {
-    float
-        * h_data,
-        * h_pA,
-        * h_mA,
-        * h_eA;
-
-    float
-        * d_data,
-        * d_pA,
-        * d_mA,
-        * d_eA;
-
-    int raw_width = 256;
-
-    // init h_data
-    h_data = (float*)glcm.data;
-    h_pA = (float*)malloc(raw_width * sizeof(float*));
-    h_mA = (float*)malloc(raw_width * sizeof(float*));
-    h_eA = (float*)malloc(raw_width * sizeof(float*));
-
-    gpuErrorCheck(cudaMalloc((void**)&d_data, raw_width * raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_pA, raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_mA, raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_eA, raw_width * sizeof(float)));
-    gpuErrorCheck(cudaMemcpy(d_data, h_data, raw_width * raw_width * sizeof(float), cudaMemcpyHostToDevice));
-
-    GetPArray(d_data, 256, d_pA);
-    //gpuErrorCheck(cudaMemcpy(h_pA, d_pA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
-
-    GetMArray(d_data, 256, d_pA, d_mA);
-    //gpuErrorCheck(cudaMemcpy(h_mA, d_mA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
-
-    GetEArray(d_data, 256, d_mA, d_eA);
-    gpuErrorCheck(cudaMemcpy(h_eA, d_eA, raw_width * sizeof(float), cudaMemcpyDeviceToHost));
-
-    // check pA
-    float* pA_ref;
-    pA_ref = (float*)malloc(raw_width * sizeof(float*));
-    for (int t = 0; t < raw_width; t++) {
-        float pa_sum = 0.0f;
-        for (int x = 0; x < t + 1; x++) {
-            for (int y = 0; y < t + 1; y++) {
-                pa_sum += h_data[y * raw_width + x];
-            }
-        }
-        pA_ref[t] = pa_sum;
-    }
-    for (int i = 0; i < raw_width; i++) {
-        //printf("ref: %f, gpu: %f\n", pA_ref[i], h_pA[i]);
-    }
-
-    // check mA
-    float* mA_ref;
-    mA_ref = (float*)malloc(raw_width * sizeof(float*));
-    for (int t = 0; t < raw_width; t++) {
-        float ma_sum = 0.0f;
-        for (int x = 0; x < t + 1; x++) {
-            for (int y = 0; y < t + 1; y++) {
-                ma_sum += h_data[y * raw_width + x] * x * y;
-            }
-        }
-        if (pA_ref[t] != 0.0f) {
-            mA_ref[t] = ma_sum / pA_ref[t];
-        }
-        else {
-            mA_ref[t] = 0.0f;
-        }
-    }
-    for (int i = 0; i < raw_width; i++) {
-        //printf("i: %d, ref: %f, gpu: %f\n", i, mA_ref[i], h_mA[i]);
-    }
-
-    // check eA
-    float* eA_ref;
-    eA_ref = (float*)malloc(raw_width * sizeof(float*));
-    for (int t = 0; t < raw_width; t++) {
-        float ea_sum = 0.0f;
-        float meanA = mA_ref[t];
-        for (int x = 0; x < t + 1; x++) {
-            for (int y = 0; y < t + 1; y++) {
-                float p = h_data[y * raw_width + x];
-                ea_sum += ((float)x) * ((float)y) * p * log2((((float)x) * ((float)y) + EPSILON) / (meanA + EPSILON));
-                ea_sum += meanA * p * log2(meanA / (((float)x) + EPSILON) / (((float)y) + EPSILON) + EPSILON);
-            }
-        }
-        eA_ref[t] = ea_sum;
-    }
-    for (int i = 0; i < raw_width; i++) {
-        printf("i: %d, ref: %f, gpu: %f\n", i, eA_ref[i], h_eA[i]);
-    }
-
-    //gpuErrorCheck(cudaFree(d_data));
-    //gpuErrorCheck(cudaDeviceReset());
-    return;
 }
 
 int entropyThesholdingGPU(cv::Mat& glcm) {
@@ -582,6 +387,7 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
         * d_mC,
         * d_eC;
 
+    // host 
     h_data = (float*)glcm.data;
     h_reversed_data = (float*)malloc(dynamic_range * dynamic_range * sizeof(float*));
     h_eA = (float*)malloc(dynamic_range * sizeof(float*));
@@ -592,6 +398,7 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
         h_reversed_data[j] = h_data[i];
     }
 
+    // device
     gpuErrorCheck(cudaMalloc((void**)&d_data, dynamic_range * dynamic_range * sizeof(float)));
     gpuErrorCheck(cudaMalloc((void**)&d_reversed_data, dynamic_range * dynamic_range * sizeof(float)));
     gpuErrorCheck(cudaMalloc((void**)&d_pA, dynamic_range * sizeof(float)));
@@ -603,13 +410,16 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     gpuErrorCheck(cudaMemcpy(d_data, h_data, dynamic_range * dynamic_range * sizeof(float), cudaMemcpyHostToDevice));
     gpuErrorCheck(cudaMemcpy(d_reversed_data, h_reversed_data, dynamic_range * dynamic_range * sizeof(float), cudaMemcpyHostToDevice));
 
-    GetPArray(d_data, dynamic_range, d_pA);
-    GetMArray(d_data, dynamic_range, d_pA, d_mA);
-    GetEArray(d_data, dynamic_range, d_mA, d_eA);
 
+    bool reversed = false;
+    GetPArray(d_data, dynamic_range, d_pA);
+    GetMArray(d_data, dynamic_range, d_pA, d_mA, reversed);
+    GetEArray(d_data, dynamic_range, d_mA, d_eA, reversed);
+
+    reversed = true;
     GetPArray(d_reversed_data, dynamic_range, d_pC);
-    GetMArray(d_reversed_data, dynamic_range, d_pC, d_mC);
-    GetEArray(d_reversed_data, dynamic_range, d_mC, d_eC);
+    GetMArray(d_reversed_data, dynamic_range, d_pC, d_mC, reversed);
+    GetEArray(d_reversed_data, dynamic_range, d_mC, d_eC, reversed);
 
     gpuErrorCheck(cudaMemcpy(h_eA, d_eA, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
     gpuErrorCheck(cudaMemcpy(h_eC, d_eC, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
@@ -621,7 +431,7 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     int min_t = -1;
     for (int i = 0, int j = dynamic_range - 1; i < dynamic_range; i++, j--) {
         h_AC[i] = h_eA[i] + h_eC[j];
-        printf("i: %d, A:%f, C: %f, AC: %f\n", i, h_eA[i], h_eC[j], h_AC[i]);
+        //printf("i: %d, A:%f, C: %f, AC: %f\n", i, h_eA[i], h_eC[j], h_AC[i]);
         if (h_AC[i] < min_value) {
             min_t = i;
             min_value = h_AC[i];
@@ -686,7 +496,7 @@ void GetPArray(float* d_data, int full_width, float* d_pA) {
     gpuErrorCheck(cudaFree(d_buf));
 }
 
-void GetMArray(float* d_data, int full_width, float* d_pA, float* d_mA) {
+void GetMArray(float* d_data, int full_width, float* d_pA, float* d_mA, bool reversed) {
     float
         * d_buf,
         * d_data_rc;
@@ -694,7 +504,7 @@ void GetMArray(float* d_data, int full_width, float* d_pA, float* d_mA) {
     gpuErrorCheck(cudaMalloc((void**)&d_data_rc, full_width * full_width * sizeof(float)));
     dim3 rc_block(TILE_DIM, TILE_DIM);
     dim3 rc_grid(iDivUp(full_width, TILE_DIM), iDivUp(full_width, TILE_DIM));
-    MultiplyRC << <rc_grid, rc_block >> > (d_data_rc, d_data, full_width);
+    MultiplyRC << <rc_grid, rc_block >> > (d_data_rc, d_data, full_width, reversed);
     gpuErrorCheck(cudaDeviceSynchronize());
 
     // from 32 to 255
@@ -732,7 +542,7 @@ void GetMArray(float* d_data, int full_width, float* d_pA, float* d_mA) {
     gpuErrorCheck(cudaFree(d_buf));
 }
 
-void GetEArray(float* d_data, int full_width, float* d_mA, float* d_eA) {
+void GetEArray(float* d_data, int full_width, float* d_mA, float* d_eA, bool reversed) {
     float
         * d_buf,
         * d_data_computed;
@@ -747,7 +557,7 @@ void GetEArray(float* d_data, int full_width, float* d_mA, float* d_eA) {
         // 
         dim3 rc_block(TILE_DIM, TILE_DIM);
         dim3 rc_grid(iDivUp(full_width, TILE_DIM), iDivUp(full_width, TILE_DIM));
-        ComputeEntropyMatrixKernel << <rc_grid, rc_block >> > (d_data_computed, d_data, full_width, d_mA, i);
+        ComputeEntropyMatrixKernel << <rc_grid, rc_block >> > (d_data_computed, d_data, full_width, d_mA, i, reversed);
         gpuErrorCheck(cudaDeviceSynchronize());
         //
 
