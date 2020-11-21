@@ -7,6 +7,7 @@
 hair_detection/hair_detection.vcxproj
 hair_detection/hair_detection.vcxproj.filters
 hair_detection.sln
+hair_detection/*.jpg
 
 # User-specific files
 *.rsuser
