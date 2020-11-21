@@ -8,8 +8,10 @@ Three versions of hair detection with their performance, respectively.
 
 ## test  
 * image  
-![](/sample/image.png)
+![](/sample/raw.jpg)
 
+* mask  
+![](/smaple/mask.jpg)
 
-* result  
-![](/sample/afterimage.png)
+* result    
+![](/sample/processed.jpg)
