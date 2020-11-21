@@ -11,7 +11,7 @@ Three versions of hair detection with their performance, respectively.
 ![](/sample/raw.jpg)
 
 * mask  
-![](/smaple/mask.jpg)
+![](/sample/mask.jpg)
 
 * result    
 ![](/sample/processed.jpg)
