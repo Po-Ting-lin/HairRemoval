@@ -274,7 +274,7 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     glcm.release();
         
     auto t6 = std::chrono::system_clock::now();
-    cleanIsolatedComponent(mask, para);
+    //cleanIsolatedComponent(mask, para);
 
     auto t7 = std::chrono::system_clock::now();
 

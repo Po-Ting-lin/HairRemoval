@@ -125,7 +125,7 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
 
     // init data
     
-    float* h_kernels = GaborFilterCube(para);
+    float* h_kernels = gaborFilterCube(para);
 
     auto t5 = std::chrono::system_clock::now();
 
@@ -191,7 +191,7 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     //}
     ///////////
 
-    CubeReduction(d_DepthResult, d_Result, fftH, fftW, dataH, dataW, depth);
+    cubeReduction(d_DepthResult, d_Result, fftH, fftW, dataH, dataW, depth);
 
     auto t10 = std::chrono::system_clock::now();
 

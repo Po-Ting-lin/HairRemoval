@@ -26,8 +26,22 @@ typedef struct
 } fComplex;
 #endif
 
-int snapTransformSize(int dataSize);
-float getRand(void);
+inline float getRand(void)
+{
+    return (float)(rand() % 16);
+}
+
+inline __device__ void mulAndScale(fComplex& a, const fComplex& b, const float& c)
+{
+    fComplex t = { c * (a.x * b.x - a.y * b.y), c * (a.y * b.x + a.x * b.y) };
+    a = t;
+}
+
+inline __device__ void mulAndScaleModified(const fComplex& a, const fComplex& b, const float& c, fComplex& d)
+{
+    fComplex t = { c * (a.x * b.x - a.y * b.y), c * (a.y * b.x + a.x * b.y) };
+    d = t;
+}
 
 __global__ void padKernelKernel(
     float* d_Dst,
@@ -71,17 +85,7 @@ __global__ void cubeReductionKernel(
     int depth
 );
 
-inline __device__ void mulAndScale(fComplex& a, const fComplex& b, const float& c)
-{
-    fComplex t = { c * (a.x * b.x - a.y * b.y), c * (a.y * b.x + a.x * b.y) };
-    a = t;
-}
-
-inline __device__ void mulAndScaleModified(const fComplex& a, const fComplex& b, const float& c, fComplex& d)
-{
-    fComplex t = { c * (a.x * b.x - a.y * b.y), c * (a.y * b.x + a.x * b.y) };
-    d = t;
-}
+int snapTransformSize(int dataSize);
 
 void convolutionClampToBorderCPU(
     float* h_Result,
@@ -128,7 +132,7 @@ void modulateAndNormalize(
     int padding
 );
 
-void CubeReduction(
+void cubeReduction(
     float* d_Src,
     uchar* d_Dst,
     int fftH,
@@ -137,5 +141,6 @@ void CubeReduction(
     int dataW,
     int depth
 );
-float * GaborFilterCube(HairDetectionParameters para);
+
+float* gaborFilterCube(HairDetectionParameters para);
 

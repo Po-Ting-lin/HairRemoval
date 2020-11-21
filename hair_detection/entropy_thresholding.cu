@@ -4,7 +4,7 @@
 #define EPSILON 1e-8
 #define NUM_STREAMS 15
 
-__global__ void PreSumXMatrixKernel(float* src, int nx, int raw_width, int new_width) {
+__global__ void preSumXMatrixKernel(float* src, int nx, int raw_width, int new_width) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int diff = raw_width - new_width;
@@ -15,7 +15,7 @@ __global__ void PreSumXMatrixKernel(float* src, int nx, int raw_width, int new_w
     }
 }
 
-__global__ void PreSumYMatrixKernel(float* src, int nx, int raw_width, int new_width) {
+__global__ void preSumYMatrixKernel(float* src, int nx, int raw_width, int new_width) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int diff = raw_width - new_width;
@@ -26,7 +26,7 @@ __global__ void PreSumYMatrixKernel(float* src, int nx, int raw_width, int new_w
     }
 }
 
-__global__ void SumMatirxKernel(float* src, int nx, int multiple_width, float* sum) {
+__global__ void sumMatirxKernel(float* src, int nx, int multiple_width, float* sum) {
     __shared__ float smem[TILE_DIM][TILE_DIM];
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -65,7 +65,7 @@ __global__ void SumMatirxKernel(float* src, int nx, int multiple_width, float* s
     }
 }
 
-__global__ void SumSumMatrixKernel(float* sum_matrix, float* d_pA, int sum_matrix_size, int threshold) {
+__global__ void sumSumMatrixKernel(float* sum_matrix, float* d_pA, int sum_matrix_size, int threshold) {
     __shared__ float smem[2 * TILE_DIM];
     int tid = threadIdx.x;
 
@@ -94,14 +94,14 @@ __global__ void SumSumMatrixKernel(float* sum_matrix, float* d_pA, int sum_matri
     }
 }
 
-__global__ void DividePArrayKernel(float* d_p, float* d_m, int size) {
+__global__ void dividePArrayKernel(float* d_p, float* d_m, int size) {
     int tid = threadIdx.x;
     if (tid < size) {
         d_m[tid] = __fdividef(d_m[tid], d_p[tid]);
     }
 }
 
-__global__ void MultiplyRCKernel(float* d_data_rc, float* d_data, int nx, bool reversed) {
+__global__ void multiplyRCKernel(float* d_data_rc, float* d_data, int nx, bool reversed) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int cx = reversed ? nx - x - 1 : x;
@@ -112,7 +112,7 @@ __global__ void MultiplyRCKernel(float* d_data_rc, float* d_data, int nx, bool r
     }
 }
 
-__global__ void ComputeEntropyMatrixKernel(float* d_data_computed, float* d_data, int nx, float* d_mA, int threshold, bool reversed) {
+__global__ void computeEntropyMatrixKernel(float* d_data_computed, float* d_data, int nx, float* d_mA, int threshold, bool reversed) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int cx = reversed ? nx - x - 1 : x;
@@ -127,7 +127,7 @@ __global__ void ComputeEntropyMatrixKernel(float* d_data_computed, float* d_data
     }
 }
 
-__global__ void ReversedDataKernel(float* d_data, float* d_reversed_data, int nx) {
+__global__ void reversedDataKernel(float* d_data, float* d_reversed_data, int nx) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     int rx = nx - x - 1;
@@ -196,15 +196,15 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     auto t35 = std::chrono::system_clock::now();
 
     bool reversed = false;
-    GetPArrayStream(d_data, dynamic_range, d_pA, stream);
-    GetMArrayStream(d_data, dynamic_range, d_pA, d_mA, reversed, stream);
-    GetEArrayStream(d_data, dynamic_range, d_mA, d_eA, reversed, stream);
+    getAreaArray(d_data, dynamic_range, d_pA, stream);
+    getMeanArray(d_data, dynamic_range, d_pA, d_mA, reversed, stream);
+    getEntropyArray(d_data, dynamic_range, d_mA, d_eA, reversed, stream);
 
     reversed = true;
-    ReversedData(d_data, d_reversed_data, dynamic_range);
-    GetPArrayStream(d_reversed_data, dynamic_range, d_pC, stream);
-    GetMArrayStream(d_reversed_data, dynamic_range, d_pC, d_mC, reversed, stream);
-    GetEArrayStream(d_reversed_data, dynamic_range, d_mC, d_eC, reversed, stream);
+    reversedData(d_data, d_reversed_data, dynamic_range);
+    getAreaArray(d_reversed_data, dynamic_range, d_pC, stream);
+    getMeanArray(d_reversed_data, dynamic_range, d_pC, d_mC, reversed, stream);
+    getEntropyArray(d_reversed_data, dynamic_range, d_mC, d_eC, reversed, stream);
     gpuErrorCheck(cudaDeviceSynchronize());
 
     for (int i = 0; i < NUM_STREAMS; i++) {
@@ -256,14 +256,14 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     return min_t;
 }
 
-void ReversedData(float* d_data, float* d_reversed_data, int full_width) {
+void reversedData(float* d_data, float* d_reversed_data, int full_width) {
     dim3 block(TILE_DIM, TILE_DIM);
     dim3 grid(iDivUp(full_width, TILE_DIM), iDivUp(full_width, TILE_DIM));
-    ReversedDataKernel << <grid, block >> > (d_data, d_reversed_data, full_width);
+    reversedDataKernel << <grid, block >> > (d_data, d_reversed_data, full_width);
     gpuErrorCheck(cudaDeviceSynchronize());
 }
 
-void GetPArrayStream(float* d_data, int full_width, float* d_pA, cudaStream_t* stream) {
+void getAreaArray(float* d_data, int full_width, float* d_pA, cudaStream_t* stream) {
     float* d_buf, * d_sum_matrix;
     int sum_matirx_size = 2 * TILE_DIM;
     gpuErrorCheck(cudaMalloc((void**)&d_buf, full_width * full_width * full_width * sizeof(float)));
@@ -275,9 +275,9 @@ void GetPArrayStream(float* d_data, int full_width, float* d_pA, cudaStream_t* s
         int idx = i % NUM_STREAMS;
         int buf_offset = i * full_width * full_width;
         int sum_matrix_offset = i * sum_matirx_size;
-        int multiple_width = GetClosedWidth(raw_width);
+        int multiple_width = getClosedWidth(raw_width);
         gpuErrorCheck(cudaMemcpyAsync(&d_buf[buf_offset], d_data, full_width * full_width * sizeof(float), cudaMemcpyDeviceToDevice, stream[idx]));
-        SumMatrixStream(&d_buf[buf_offset], d_pA, &d_sum_matrix[sum_matrix_offset], full_width, raw_width, multiple_width, i, stream[idx]);
+        sumMatrixStream(&d_buf[buf_offset], d_pA, &d_sum_matrix[sum_matrix_offset], full_width, raw_width, multiple_width, i, stream[idx]);
     }
 
     gpuErrorCheck(cudaStreamSynchronize(*stream));
@@ -285,7 +285,7 @@ void GetPArrayStream(float* d_data, int full_width, float* d_pA, cudaStream_t* s
     gpuErrorCheck(cudaFree(d_sum_matrix));
 }
 
-void GetMArrayStream(float* d_data, int full_width, float* d_pA, float* d_mA, bool reversed, cudaStream_t* stream) {
+void getMeanArray(float* d_data, int full_width, float* d_pA, float* d_mA, bool reversed, cudaStream_t* stream) {
     float* d_buf, * d_data_rc, * d_sum_matrix;
     int sum_matirx_size = 2 * TILE_DIM;
     dim3 rc_block(TILE_DIM, TILE_DIM);
@@ -296,7 +296,7 @@ void GetMArrayStream(float* d_data, int full_width, float* d_pA, float* d_mA, bo
     gpuErrorCheck(cudaMemset(d_sum_matrix, 0.0f, sum_matirx_size * full_width * sizeof(float)));
 
     // r * c * element
-    MultiplyRCKernel << <rc_grid, rc_block >> > (d_data_rc, d_data, full_width, reversed);
+    multiplyRCKernel << <rc_grid, rc_block >> > (d_data_rc, d_data, full_width, reversed);
     gpuErrorCheck(cudaDeviceSynchronize());
 
     for (int i = TILE_DIM - 1; i < full_width; i++) {
@@ -304,14 +304,14 @@ void GetMArrayStream(float* d_data, int full_width, float* d_pA, float* d_mA, bo
         int idx = i % NUM_STREAMS;
         int buf_offset = i * full_width * full_width;
         int sum_matrix_offset = i * sum_matirx_size;
-        int multiple_width = GetClosedWidth(raw_width);
+        int multiple_width = getClosedWidth(raw_width);
         gpuErrorCheck(cudaMemcpyAsync(&d_buf[buf_offset], d_data_rc, full_width * full_width * sizeof(float), cudaMemcpyDeviceToDevice, stream[idx]));
-        SumMatrixStream(&d_buf[buf_offset], d_mA, &d_sum_matrix[sum_matrix_offset], full_width, raw_width, multiple_width, i, stream[idx]);
+        sumMatrixStream(&d_buf[buf_offset], d_mA, &d_sum_matrix[sum_matrix_offset], full_width, raw_width, multiple_width, i, stream[idx]);
     }
     gpuErrorCheck(cudaStreamSynchronize(*stream));
 
     // divide area
-    DividePArrayKernel << <1, full_width >> > (d_pA, d_mA, full_width);
+    dividePArrayKernel << <1, full_width >> > (d_pA, d_mA, full_width);
     gpuErrorCheck(cudaDeviceSynchronize());
 
     gpuErrorCheck(cudaFree(d_buf));
@@ -319,7 +319,7 @@ void GetMArrayStream(float* d_data, int full_width, float* d_pA, float* d_mA, bo
     gpuErrorCheck(cudaFree(d_sum_matrix));
 }
 
-void GetEArrayStream(float* d_data, int full_width, float* d_mA, float* d_eA, bool reversed, cudaStream_t* stream) {
+void getEntropyArray(float* d_data, int full_width, float* d_mA, float* d_eA, bool reversed, cudaStream_t* stream) {
     float* d_buf, * d_sum_matrix;
     int sum_matirx_size = 2 * TILE_DIM;
     dim3 rc_block(TILE_DIM, TILE_DIM);
@@ -334,9 +334,9 @@ void GetEArrayStream(float* d_data, int full_width, float* d_mA, float* d_eA, bo
         int idx = i % NUM_STREAMS;
         int buf_offset = i * full_width * full_width;
         int sum_matrix_offset = i * sum_matirx_size;
-        int multiple_width = GetClosedWidth(raw_width);
-        ComputeEntropyMatrixKernel << <rc_grid, rc_block, 0, stream[idx] >> > (&d_buf[buf_offset], d_data, full_width, d_mA, i, reversed);
-        SumMatrixStream(&d_buf[buf_offset], d_eA, &d_sum_matrix[sum_matrix_offset], full_width, raw_width, multiple_width, i, stream[idx]);
+        int multiple_width = getClosedWidth(raw_width);
+        computeEntropyMatrixKernel << <rc_grid, rc_block, 0, stream[idx] >> > (&d_buf[buf_offset], d_data, full_width, d_mA, i, reversed);
+        sumMatrixStream(&d_buf[buf_offset], d_eA, &d_sum_matrix[sum_matrix_offset], full_width, raw_width, multiple_width, i, stream[idx]);
     }
     gpuErrorCheck(cudaStreamSynchronize(*stream));
 
@@ -344,18 +344,18 @@ void GetEArrayStream(float* d_data, int full_width, float* d_mA, float* d_eA, bo
     gpuErrorCheck(cudaFree(d_sum_matrix));
 }
 
-void SumMatrixStream(float* d_buf, float* d_arr, float* d_sum_matrix, int full_width, int raw_width, int multiple_width, int threshold, cudaStream_t stream) {
+void sumMatrixStream(float* d_buf, float* d_arr, float* d_sum_matrix, int full_width, int raw_width, int multiple_width, int threshold, cudaStream_t stream) {
     dim3 pre_sum_block(TILE_DIM, TILE_DIM);
     dim3 pre_sum_grid(iDivUp(raw_width, TILE_DIM), iDivUp(raw_width, TILE_DIM));
     dim3 sum_block(TILE_DIM, TILE_DIM);
     dim3 sum_grid(iDivUp(multiple_width, TILE_DIM), iDivUp(multiple_width, TILE_DIM));
 
     if (raw_width != multiple_width) {
-        PreSumXMatrixKernel << <pre_sum_grid, pre_sum_block, 0, stream >> > (d_buf, full_width, raw_width, multiple_width);
-        PreSumYMatrixKernel << <pre_sum_grid, pre_sum_block, 0, stream >> > (d_buf, full_width, raw_width, multiple_width);
+        preSumXMatrixKernel << <pre_sum_grid, pre_sum_block, 0, stream >> > (d_buf, full_width, raw_width, multiple_width);
+        preSumYMatrixKernel << <pre_sum_grid, pre_sum_block, 0, stream >> > (d_buf, full_width, raw_width, multiple_width);
     }
-    SumMatirxKernel << <sum_grid, sum_block, TILE_DIM* (TILE_DIM) * sizeof(float), stream >> > (d_buf, full_width, multiple_width, d_sum_matrix);
-    SumSumMatrixKernel << <1, 2 * TILE_DIM, 2 * TILE_DIM * sizeof(float), stream >> > (d_sum_matrix, d_arr, sum_grid.x * sum_grid.x, threshold);
+    sumMatirxKernel << <sum_grid, sum_block, TILE_DIM * (TILE_DIM) * sizeof(float), stream >> > (d_buf, full_width, multiple_width, d_sum_matrix);
+    sumSumMatrixKernel << <1, 2 * TILE_DIM, 2 * TILE_DIM * sizeof(float), stream >> > (d_sum_matrix, d_arr, sum_grid.x * sum_grid.x, threshold);
 }
 
 void entropyCPU(float* h_data, float* h_e, int width, bool reversed) {

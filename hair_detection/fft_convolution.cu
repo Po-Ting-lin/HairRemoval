@@ -39,11 +39,6 @@ int snapTransformSize(int dataSize)
     }
 }
 
-float getRand(void)
-{
-    return (float)(rand() % 16);
-}
-
 __global__ void padKernelKernel(
     float* d_Dst,
     float* d_Src,
@@ -281,7 +276,7 @@ void convolutionClampToBorderCPU(
         }
 }
 
-float* GaborFilterCube(HairDetectionParameters para) {
+float* gaborFilterCube(HairDetectionParameters para) {
     float* output = new float[para.kernelW * para.kernelH * para.numberOfFilter];
     float* output_ptr = output;
     for (int curNum = 0; curNum < para.numberOfFilter; curNum++) {
@@ -300,7 +295,7 @@ float* GaborFilterCube(HairDetectionParameters para) {
 }
 
 
-void CubeReduction(
+void cubeReduction(
     float* d_Src,
     uchar* d_Dst,
     int fftH,
