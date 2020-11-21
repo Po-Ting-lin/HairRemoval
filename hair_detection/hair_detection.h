@@ -4,7 +4,10 @@
 #include<iostream>
 #include<omp.h>
 #include "parameters.h"
-
+#include "utils.h"
+#include "hair_detection_kernel.cuh"
+#include "fft_convolution.cuh"
+#include "entropy_thresholding.cuh"
 
 #define CV_8U_DYNAMICRANGE 256
 #define EPSILON 1e-8

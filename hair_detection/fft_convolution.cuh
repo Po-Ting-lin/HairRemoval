@@ -10,6 +10,7 @@
 #include "cuda_error.cuh"
 #include <opencv2/opencv.hpp>
 #include "parameters.h"
+#include "utils.h"
 
 typedef unsigned int uint;
 
@@ -27,18 +28,6 @@ typedef struct
 
 int snapTransformSize(int dataSize);
 float getRand(void);
-
-//Round a / b to nearest higher integer value
-inline int iDivUp(int a, int b)
-{
-    return (a % b != 0) ? (a / b + 1) : (a / b);
-}
-
-//Align a to nearest higher multiple of b
-inline int iAlignUp(int a, int b)
-{
-    return (a % b != 0) ? (a - a % b + b) : a;
-}
 
 __global__ void padKernelKernel(
     float* d_Dst,

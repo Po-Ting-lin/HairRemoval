@@ -1,7 +1,5 @@
 #include "hair_detection.h"
-#include "utils.h"
-#include "hair_detection_kernel.cuh"
-#include "filtering.cuh"
+
 
 cv::Mat GaborFilter(float theta, HairDetectionParameters para) {
 	cv::Mat output(cv::Size(para.kernelRadius * 2 + 1, para.kernelRadius * 2 + 1), CV_64F, cv::Scalar(0.0));
@@ -285,7 +283,6 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
 
     //inpaintHair(src, dst, mask, para);
 
-    cv::imwrite("output.png", mask);
     dst = mask;
 
     //printTime(t1, t4, "get hair mask");

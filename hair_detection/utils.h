@@ -2,6 +2,20 @@
 #include<opencv2/opencv.hpp>
 #include<string>
 
+
+//Round a / b to nearest higher integer value
+inline int iDivUp(int a, int b)
+{
+    return (a % b != 0) ? (a / b + 1) : (a / b);
+}
+
+//Align a to nearest higher multiple of b
+inline int iAlignUp(int a, int b)
+{
+    return (a % b != 0) ? (a - a % b + b) : a;
+}
+
+
 static void printTime(std::chrono::system_clock::time_point t1, std::chrono::system_clock::time_point t2, std::string name) {
     std::chrono::duration<double> time_lapse = t2 - t1;
     std::cout << name << " time consume: " << time_lapse.count() << " s" << std::endl;

@@ -1,4 +1,4 @@
-#include "filtering.cuh"
+#include "fft_convolution.cuh"
 
 #define PI 3.14159
 #define BLOCKDIM 32
@@ -312,7 +312,6 @@ void CubeReduction(
 {
     dim3 block(BLOCKDIM, 8);
     dim3 grid(iDivUp(dataW, block.x), iDivUp(dataH, block.y));
-
     cubeReductionKernel << <grid, block >> > (d_Src, d_Dst, fftH, fftW, dataH, dataW, depth);
     getLastCudaError("CubeReductionKernel<<<>>> execution failed\n");
 }
