@@ -280,7 +280,12 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
 
     auto t7 = std::chrono::system_clock::now();
 
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5), cv::Point(-1, -1));
+    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 1);
+
     //inpaintHair(src, dst, mask, para);
+
+    cv::imwrite("output.png", mask);
     dst = mask;
 
     //printTime(t1, t4, "get hair mask");
