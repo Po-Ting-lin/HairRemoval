@@ -21,9 +21,8 @@ __global__ void ReversedDataKernel(float* d_data, float* d_reversed_data, int nx
 
 void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para);
 int entropyThesholdingGPU(cv::Mat& glcm);
-int GetClosedWidth(int width);
+inline int GetClosedWidth(int width);
 void entropyCPU(float* h_data, float* h_e, int width, bool reversed);
-void SumMatrix(float* d_buf, float* d_arr, int full_width, int raw_width, int multiple_width, int threshold);
 void ReversedData(float* d_data, float* d_reversed_data, int full_width);
 
 void GetPArrayStream(float* d_data, int full_width, float* d_pA, cudaStream_t* stream);

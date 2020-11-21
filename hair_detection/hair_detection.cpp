@@ -283,10 +283,10 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     //inpaintHair(src, dst, mask, para);
     dst = mask;
 
-    printTime(t1, t4, "get hair mask");
-    printTime(t4, t5, "glcm_cal");
-    printTime(t5, t6, "entropyThesholding");
-    printTime(t6, t7, "cleanIsolatedComponent");
+    //printTime(t1, t4, "get hair mask");
+    //printTime(t4, t5, "glcm_cal");
+    //printTime(t5, t6, "entropyThesholding");
+    //printTime(t6, t7, "cleanIsolatedComponent");
 
     return true;
 }

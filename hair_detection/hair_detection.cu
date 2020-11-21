@@ -231,7 +231,7 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     //printTime(t11, t12, "free");
 }
 
-int GetClosedWidth(int width){
+inline int GetClosedWidth(int width){
     int number = (int)log2(width);
     return pow(2, number);
 }
@@ -259,39 +259,39 @@ __global__ void PreSumYMatrixKernel(float* src, int nx, int raw_width, int new_w
 }
 
 __global__ void SumMatirxKernel(float* src, int nx, int multiple_width, float* sum) {
-    __shared__ float smem[TILE_DIM * TILE_DIM];
+    __shared__ float smem[TILE_DIM][TILE_DIM];
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     
     if (x < multiple_width && y < multiple_width) {
         if (multiple_width < blockDim.x) {
             if (threadIdx.x >= multiple_width || threadIdx.y >= multiple_width) {
-                smem[threadIdx.y * blockDim.x + threadIdx.x] = 0.0f;
+                smem[threadIdx.y][threadIdx.x] = 0.0f;
             }
             else {
-                smem[threadIdx.y * blockDim.x + threadIdx.x] = src[y * nx + x];
+                smem[threadIdx.y][threadIdx.x] = src[y * nx + x];
             }
         }
         else {
-            smem[threadIdx.y * blockDim.x + threadIdx.x] = src[y * nx + x];
+            smem[threadIdx.y][threadIdx.x] = src[y * nx + x];
         }
         
         __syncthreads();
 
         for (int offx = blockDim.x / 2; offx > 0; offx /= 2) {
             if (threadIdx.x < offx) {
-                smem[threadIdx.y * blockDim.x + threadIdx.x] += smem[threadIdx.y * blockDim.x + threadIdx.x + offx];
+                smem[threadIdx.y][threadIdx.x] += smem[threadIdx.y][threadIdx.x + offx];
 
                 __syncthreads();
 
                 if (threadIdx.y < offx) {
-                    smem[threadIdx.y * blockDim.x + threadIdx.x] += smem[(threadIdx.y + offx) * blockDim.x + threadIdx.x];
+                    smem[threadIdx.y][threadIdx.x] += smem[threadIdx.y + offx][threadIdx.x];
                 }
             }
             __syncthreads();
         }
         if (threadIdx.x == 0 && threadIdx.y == 0) {
-            sum[blockIdx.y * gridDim.x + blockIdx.x] = smem[threadIdx.y * blockDim.x + threadIdx.x];
+            sum[blockIdx.y * gridDim.x + blockIdx.x] = smem[threadIdx.y][threadIdx.x];
             //printf("x: %d, y: %d -- %f\n", blockIdx.x, blockIdx.y, sum[blockIdx.y * gridDim.x + blockIdx.x]);
         }
     }
@@ -470,7 +470,7 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     //printTime(t4, t5, "D to H");
     //printTime(t5, t6, "conbine");
 
-    printf("min threshold : %d\n", min_t);
+    //printf("min threshold : %d\n", min_t);
 
     gpuErrorCheck(cudaFree(d_data));
     gpuErrorCheck(cudaFree(d_reversed_data));
@@ -586,33 +586,8 @@ void SumMatrixStream(float* d_buf, float* d_arr, float* d_sum_matrix, int full_w
         PreSumXMatrixKernel << <pre_sum_grid, pre_sum_block, 0, stream >> > (d_buf, full_width, raw_width, multiple_width);
         PreSumYMatrixKernel << <pre_sum_grid, pre_sum_block, 0, stream >> > (d_buf, full_width, raw_width, multiple_width);
     }
-    SumMatirxKernel << <sum_grid, sum_block, TILE_DIM * TILE_DIM * sizeof(float), stream >> > (d_buf, full_width, multiple_width, d_sum_matrix);
+    SumMatirxKernel << <sum_grid, sum_block, TILE_DIM * (TILE_DIM) * sizeof(float), stream >> > (d_buf, full_width, multiple_width, d_sum_matrix);
     SumSumMatrixKernel << <1, 2 * TILE_DIM, 2 * TILE_DIM * sizeof(float), stream >> > (d_sum_matrix, d_arr, sum_grid.x * sum_grid.x, threshold);
-}
-
-void SumMatrix(float* d_buf, float* d_arr, int full_width, int raw_width, int multiple_width, int threshold) {
-    dim3 pre_sum_block(TILE_DIM, TILE_DIM);
-    dim3 pre_sum_grid(iDivUp(raw_width, TILE_DIM), iDivUp(raw_width, TILE_DIM));
-    dim3 sum_block(TILE_DIM, TILE_DIM);
-    dim3 sum_grid(iDivUp(multiple_width, TILE_DIM), iDivUp(multiple_width, TILE_DIM));
-
-    float* d_sum_matrix;
-    gpuErrorCheck(cudaMalloc((void**)&d_sum_matrix, sum_grid.x * sum_grid.x * sizeof(float)));
-    gpuErrorCheck(cudaMemset(d_sum_matrix, 0.0f, sum_grid.x * sum_grid.x * sizeof(float)));
-
-    if (raw_width != multiple_width) {
-        PreSumXMatrixKernel << <pre_sum_grid, pre_sum_block >> > (d_buf, full_width, raw_width, multiple_width);
-        gpuErrorCheck(cudaDeviceSynchronize());
-        PreSumYMatrixKernel << <pre_sum_grid, pre_sum_block >> > (d_buf, full_width, raw_width, multiple_width);
-        gpuErrorCheck(cudaDeviceSynchronize());
-    }
-    SumMatirxKernel << <sum_grid, sum_block >> > (d_buf, full_width, multiple_width, d_sum_matrix);
-    gpuErrorCheck(cudaDeviceSynchronize());
-
-    SumSumMatrixKernel << <1, 2 * TILE_DIM >> > (d_sum_matrix, d_arr, sum_grid.x * sum_grid.x, threshold);
-    gpuErrorCheck(cudaDeviceSynchronize());
-
-    gpuErrorCheck(cudaFree(d_sum_matrix));
 }
 
 void entropyCPU(float* h_data, float* h_e, int width, bool reversed) {
