@@ -1,5 +1,6 @@
 #include "hair_detection.h"
 
+#define TIMER false
 
 cv::Mat GaborFilter(float theta, HairDetectionParameters para) {
 	cv::Mat output(cv::Size(para.kernelRadius * 2 + 1, para.kernelRadius * 2 + 1), CV_64F, cv::Scalar(0.0));
@@ -247,7 +248,9 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     HairDetectionParameters para = HairDetectionParameters();
     SetInfo(para);
     
+#if TIMER
     auto t1 = std::chrono::system_clock::now();
+#endif
 
     cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U, cv::Scalar(0));
     if (isGPU) {
@@ -258,12 +261,17 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
         cvtL(src, chL);
         Gabor(chL, mask, para);
     }
-    
+
+#if TIMER
     auto t4 = std::chrono::system_clock::now();
+#endif
+
     cv::Mat glcm(cv::Size(CV_8U_DYNAMICRANGE, CV_8U_DYNAMICRANGE), CV_32F, cv::Scalar(0));
     grayLevelCoOccurrenceMatrix(mask, glcm);
 
+#if TIMER
     auto t5 = std::chrono::system_clock::now();
+#endif
 
     if (isGPU) {
         cv::threshold(mask, mask, entropyThesholdingGPU(glcm), CV_8U_DYNAMICRANGE - 1, 0);
@@ -272,11 +280,16 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
         cv::threshold(mask, mask, entropyThesholding(glcm), CV_8U_DYNAMICRANGE - 1, 0);
     }
     glcm.release();
-        
-    auto t6 = std::chrono::system_clock::now();
-    //cleanIsolatedComponent(mask, para);
 
+#if TIMER
+    auto t6 = std::chrono::system_clock::now();
+#endif
+
+    cleanIsolatedComponent(mask, para);
+
+#if TIMER
     auto t7 = std::chrono::system_clock::now();
+#endif
 
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5), cv::Point(-1, -1));
     cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 1);
@@ -285,10 +298,12 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
 
     dst = mask;
 
-    //printTime(t1, t4, "get hair mask");
-    //printTime(t4, t5, "glcm_cal");
-    //printTime(t5, t6, "entropyThesholding");
-    //printTime(t6, t7, "cleanIsolatedComponent");
+#if TIMER
+    printTime(t1, t4, "get hair mask");
+    printTime(t4, t5, "glcm_cal");
+    printTime(t5, t6, "entropyThesholding");
+    printTime(t6, t7, "cleanIsolatedComponent");
+#endif
 
     return true;
 }

@@ -6,6 +6,8 @@
 #define BLOCK_DIM 8
 #define EPSILON 1e-8
 #define NUM_STREAMS 6
+#define TIMER false
+#define DEBUG false
 
 __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int nx, int ny, int nz) {
     int x = threadIdx.x + TILE_DIM * blockIdx.x;
@@ -30,15 +32,16 @@ __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int
         Y = (Y > 0.008856f) ? cbrtf(Y) : fmaf(7.787f, Y, 0.1379f);
         float L = fmaf(116.0f, Y, -16.0f) * 2.55f;
 
-        //printf("r: %d g: %d b: %d --- L: %f\n", R, G, B, L);
-
         // set pixel to DRAM
         *(dst + (y + i) * nx + x) = L;
     }
 }
 
 void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
+
+#if TIMER
     auto t1 = std::chrono::system_clock::now();
+#endif
 
     // declare 
     float
@@ -72,7 +75,9 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     // host data
     cudaHostRegister(src_ptr, src_byte_size, cudaHostRegisterDefault);
 
+#if TIMER
     auto t2 = std::chrono::system_clock::now();
+#endif
 
     // device data
     uchar* device_src_ptr;
@@ -110,7 +115,9 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
         extractLChannelWithInstrinicFunction << < grid, block, 0, stream[i] >> > (&device_src_ptr[src_offset], &device_src_c_ptr[dst_offset], src.cols, pruned_rows, src.channels());
     }
 
+#if TIMER
     auto t3 = std::chrono::system_clock::now();
+#endif
 
     gpuErrorCheck(cudaDeviceSynchronize());
 
@@ -121,13 +128,16 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     cudaHostUnregister(src_ptr);
     gpuErrorCheck(cudaFree(device_src_ptr));
 
+#if TIMER
     auto t4 = std::chrono::system_clock::now();
+#endif
 
     // init data
-    
     float* h_kernels = gaborFilterCube(para);
 
+#if TIMER
     auto t5 = std::chrono::system_clock::now();
+#endif
 
     // allocation
     gpuErrorCheck(cudaMalloc((void**)&d_Kernel, para.kernelH * para.kernelW * para.numberOfFilter * sizeof(float)));
@@ -144,13 +154,16 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     // H to D
     gpuErrorCheck(cudaMemcpy(d_Kernel, h_kernels, para.kernelH * para.kernelW * para.numberOfFilter * sizeof(float), cudaMemcpyHostToDevice));
 
+#if TIMER
     auto t6 = std::chrono::system_clock::now();
+#endif
 
     // init value
     padDataClampToBorder(d_PaddedData, device_src_c_ptr, fftH, fftW, dataH, dataW, para.kernelH, para.kernelW, para.kernelY, para.kernelX);
 
-
+#if TIMER
     auto t7 = std::chrono::system_clock::now();
+#endif
 
     // make a FFT plan
     gpuErrorCheck(cufftPlan2d(&fftPlanFwd, fftH, fftW, CUFFT_R2C));
@@ -160,7 +173,9 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     gpuErrorCheck(cufftExecR2C(fftPlanFwd, (cufftReal*)d_PaddedData, (cufftComplex*)d_DataSpectrum));
     gpuErrorCheck(cudaDeviceSynchronize());
 
+#if TIMER
     auto t8 = std::chrono::system_clock::now();
+#endif
 
     for (int i = 0; i < para.numberOfFilter; i++) {
         int kernel_offset = i * para.kernelH * para.kernelW;
@@ -178,32 +193,36 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
         gpuErrorCheck(cudaDeviceSynchronize());
     }
 
+#if TIMER
     auto t9 = std::chrono::system_clock::now();
+#endif
 
-    // debug // 
-    //float* h_single;
-    //h_single = (float*)malloc(fftH * fftW * sizeof(float));
-
-    //for (int i = 0; i < para.numberOfFilter; i++) {
-    //    int offs = i * fftH * fftW;
-    //    gpuErrorCheck(cudaMemcpy(h_single, &d_DepthResult[offs], fftH * fftW * sizeof(float), cudaMemcpyDeviceToHost));
-    //    displayImage(h_single, fftW, fftH, true);
-    //}
-    ///////////
+#if DEBUG 
+    float* h_single;
+    h_single = (float*)malloc(fftH * fftW * sizeof(float));
+    for (int i = 0; i < para.numberOfFilter; i++) {
+        int offs = i * fftH * fftW;
+        gpuErrorCheck(cudaMemcpy(h_single, &d_DepthResult[offs], fftH * fftW * sizeof(float), cudaMemcpyDeviceToHost));
+        displayImage(h_single, fftW, fftH, true);
+    }
+#endif
 
     cubeReduction(d_DepthResult, d_Result, fftH, fftW, dataH, dataW, depth);
 
+#if TIMER
     auto t10 = std::chrono::system_clock::now();
+#endif
 
     gpuErrorCheck(cudaDeviceSynchronize());
     gpuErrorCheck(cudaMemcpy(dst.data, d_Result, dataH * dataW * sizeof(uchar), cudaMemcpyDeviceToHost));
 
+#if TIMER
     auto t11 = std::chrono::system_clock::now();
+#endif
 
     // free
     gpuErrorCheck(cufftDestroy(fftPlanInv));
     gpuErrorCheck(cufftDestroy(fftPlanFwd));
-
     gpuErrorCheck(cudaFree(d_DataSpectrum));
     gpuErrorCheck(cudaFree(d_KernelSpectrum));
     gpuErrorCheck(cudaFree(d_PaddedData));
@@ -212,21 +231,22 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     gpuErrorCheck(cudaFree(device_src_c_ptr));
     gpuErrorCheck(cudaFree(d_Kernel));
     gpuErrorCheck(cudaFree(d_DepthResult));
-
     gpuErrorCheck(cudaDeviceReset());
 
+#if TIMER
     auto t12 = std::chrono::system_clock::now();
 
-    //printTime(t1, t2, "source registering");
-    //printTime(t2, t3, "c channel extracting");
-    //printTime(t3, t4, "source unregistering");
-    //printTime(t4, t5, "get gabor filter");
-    //printTime(t5, t6, "cudaMalloc");
-    //printTime(t6, t7, "padDataClampToBorder");
-    //printTime(t7, t8, "source FFT");
-    //printTime(t8, t9, "kernel FFT and mul");
-    //printTime(t9, t10, "CubeReduction");
-    //printTime(t10, t11, "D to H result");
-    //printTime(t11, t12, "free");
+    printTime(t1, t2, "source registering");
+    printTime(t2, t3, "c channel extracting");
+    printTime(t3, t4, "source unregistering");
+    printTime(t4, t5, "get gabor filter");
+    printTime(t5, t6, "cudaMalloc");
+    printTime(t6, t7, "padDataClampToBorder");
+    printTime(t7, t8, "source FFT");
+    printTime(t8, t9, "kernel FFT and mul");
+    printTime(t9, t10, "CubeReduction");
+    printTime(t10, t11, "D to H result");
+    printTime(t11, t12, "free");
+#endif
 }
 
