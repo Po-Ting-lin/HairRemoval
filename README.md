@@ -1,7 +1,7 @@
 ## HairRemoval
 * hair detection
 
-Implementation of hair removal in CUDA. The methods of hair detection refer to the paper[1].  
+Implementation of hair removal in CUDA. The methods of hair detection refer to the paper[1].
 
 Three versions of hair detection with their performance, respectively.  
 ![](/sample/performance.png)
