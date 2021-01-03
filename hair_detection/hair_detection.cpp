@@ -1,7 +1,5 @@
 #include "hair_detection.h"
 
-#define TIMER false
-
 cv::Mat GaborFilter(float theta, HairDetectionParameters para) {
 	cv::Mat output(cv::Size(para.kernelRadius * 2 + 1, para.kernelRadius * 2 + 1), CV_64F, cv::Scalar(0.0));
 	double* outPtr = (double*)output.data;

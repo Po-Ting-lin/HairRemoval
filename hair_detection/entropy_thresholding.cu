@@ -1,10 +1,5 @@
 #include "entropy_thresholding.cuh"
 
-#define TILE_DIM 32
-#define EPSILON 1e-8
-#define NUM_STREAMS 15
-#define TIMER false
-
 __global__ void preSumXMatrixKernel(float* src, int nx, int raw_width, int new_width) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -194,8 +189,8 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     auto t3 = std::chrono::system_clock::now();
 #endif
 
-    cudaStream_t stream[NUM_STREAMS];
-    for (int i = 0; i < NUM_STREAMS; i++) {
+    cudaStream_t stream[E_NUM_STREAMS];
+    for (int i = 0; i < E_NUM_STREAMS; i++) {
         cudaStreamCreate(&stream[i]);
     }
 
@@ -219,7 +214,7 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     getEntropyArray(d_reversed_data, d_mC, d_eC, reversed, stream, info);
     gpuErrorCheck(cudaDeviceSynchronize());
 
-    for (int i = 0; i < NUM_STREAMS; i++) {
+    for (int i = 0; i < E_NUM_STREAMS; i++) {
         cudaStreamDestroy(stream[i]);
     }
 
@@ -305,7 +300,7 @@ void getAreaArray(float* d_data, float* d_pA, cudaStream_t* stream, BlockInfo& i
 
     for (int i = info.startThreshold; i < info.fullWidth; i++) {
         int target_width = i + 1;
-        int idx = i % NUM_STREAMS;
+        int idx = i % E_NUM_STREAMS;
         int buf_offset = i * info.fullWidth * info.fullWidth;
         int sum_matrix_offset = i * sum_matirx_size;
         int multiple_width = getClosedWidth(target_width);
@@ -340,7 +335,7 @@ void getMeanArray(float* d_data, float* d_pA, float* d_mA, bool reversed, cudaSt
 
     for (int i = info.startThreshold; i < info.fullWidth; i++) {
         int target_width = i + 1;
-        int idx = i % NUM_STREAMS;
+        int idx = i % E_NUM_STREAMS;
         int buf_offset = i * info.fullWidth * info.fullWidth;
         int sum_matrix_offset = i * sum_matirx_size;
         int multiple_width = getClosedWidth(target_width);
@@ -376,7 +371,7 @@ void getEntropyArray(float* d_data, float* d_mA, float* d_eA, bool reversed, cud
 
     for (int i = info.startThreshold; i < info.fullWidth; i++) {
         int target_width = i + 1;
-        int idx = i % NUM_STREAMS;
+        int idx = i % E_NUM_STREAMS;
         int buf_offset = i * info.fullWidth * info.fullWidth;
         int sum_matrix_offset = i * sum_matirx_size;
         int multiple_width = getClosedWidth(target_width);

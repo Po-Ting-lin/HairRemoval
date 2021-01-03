@@ -2,6 +2,8 @@
 #include "cuda_error.cuh"
 #include <opencv2/opencv.hpp>
 #include "utils.h"
+#include "parameters.h"
+
 
 struct BlockInfo {
     int fullWidth;

@@ -1,13 +1,8 @@
 #include "hair_detection_kernel.cuh"
 #include "utils.h"
+#include "parameters.h"
 #include <cuFFT.h>
 
-#define TILE_DIM 32
-#define BLOCK_DIM 8
-#define EPSILON 1e-8
-#define NUM_STREAMS 6
-#define TIMER false
-#define DEBUG false
 
 __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int nx, int ny, int nz) {
     int x = threadIdx.x + TILE_DIM * blockIdx.x;
@@ -86,20 +81,20 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     gpuErrorCheck(cudaMalloc((float**)&device_src_c_ptr, src_c_byte_size));
 
     // stream
-    int SRC_DATA_PER_STREAM = src_size / NUM_STREAMS;
-    int DST_DATA_PER_STREAM = src_c_size / NUM_STREAMS;
-    int SRC_BYTES_PER_STREAM = src_byte_size / NUM_STREAMS;
-    int DST_BYTES_PER_STREAM = src_c_byte_size / NUM_STREAMS;
+    int SRC_DATA_PER_STREAM = src_size / D_NUM_STREAMS;
+    int DST_DATA_PER_STREAM = src_c_size / D_NUM_STREAMS;
+    int SRC_BYTES_PER_STREAM = src_byte_size / D_NUM_STREAMS;
+    int DST_BYTES_PER_STREAM = src_c_byte_size / D_NUM_STREAMS;
 
-    cudaStream_t stream[NUM_STREAMS];
-    for (int i = 0; i < NUM_STREAMS; i++) {
+    cudaStream_t stream[D_NUM_STREAMS];
+    for (int i = 0; i < D_NUM_STREAMS; i++) {
         cudaStreamCreate(&stream[i]);
     }
 
     int block_x_size = TILE_DIM;
     int block_y_size = BLOCK_DIM;
     int grid_x_size = (src.cols + TILE_DIM - 1) / TILE_DIM;
-    int pruned_rows = src.rows / NUM_STREAMS;
+    int pruned_rows = src.rows / D_NUM_STREAMS;
     int grid_y_size = (pruned_rows + TILE_DIM - 1) / TILE_DIM;
 
     dim3 block(block_x_size, block_y_size);
@@ -108,7 +103,7 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     int src_offset = 0;
     int dst_offset = 0;
 
-    for (int i = 0; i < NUM_STREAMS; i++) {
+    for (int i = 0; i < D_NUM_STREAMS; i++) {
         src_offset = i * SRC_DATA_PER_STREAM;
         dst_offset = i * DST_DATA_PER_STREAM;
         gpuErrorCheck(cudaMemcpyAsync(&device_src_ptr[src_offset], &src_ptr[src_offset], SRC_BYTES_PER_STREAM, cudaMemcpyHostToDevice, stream[i]));
@@ -121,11 +116,11 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
 
     gpuErrorCheck(cudaDeviceSynchronize());
 
-    for (int i = 0; i < NUM_STREAMS; i++) {
-        cudaStreamDestroy(stream[i]);
+    for (int i = 0; i < D_NUM_STREAMS; i++) {
+        gpuErrorCheck(cudaStreamDestroy(stream[i]));
     }
 
-    cudaHostUnregister(src_ptr);
+    gpuErrorCheck(cudaHostUnregister(src_ptr));
     gpuErrorCheck(cudaFree(device_src_ptr));
 
 #if TIMER

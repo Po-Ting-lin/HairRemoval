@@ -9,9 +9,6 @@
 #include "fft_convolution.cuh"
 #include "entropy_thresholding.cuh"
 
-#define CV_8U_DYNAMICRANGE 256
-#define EPSILON 1e-8
-
 cv::Mat GaborFilter(float theta, HairDetectionParameters para);
 void Gabor(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para);
 void grayLevelCoOccurrenceMatrix(cv::Mat& src, cv::Mat& dst);

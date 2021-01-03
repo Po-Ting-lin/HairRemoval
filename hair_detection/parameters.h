@@ -1,4 +1,12 @@
 #pragma once
+#define TILE_DIM 32
+#define BLOCK_DIM 8
+#define EPSILON 1e-8
+#define D_NUM_STREAMS 6
+#define E_NUM_STREAMS 15
+#define CV_8U_DYNAMICRANGE 256
+#define TIMER true
+#define DEBUG false
 
 struct HairDetectionParameters {
 	int numberOfFilter = 8;
