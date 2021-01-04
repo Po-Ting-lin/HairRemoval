@@ -32,11 +32,22 @@ __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int
     }
 }
 
-void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
-
+void getHairMask(std::string path, int width, int height, cv::Mat& dst, HairDetectionParameters para) {
 #if TIMER
     auto t1 = std::chrono::system_clock::now();
 #endif
+
+    int image_size = width * height * 3;
+
+    uchar* host_pinned_src;
+    uchar* device_pinned_src;
+    cudaHostAlloc(&host_pinned_src, image_size, cudaHostAllocMapped);
+
+    const char* image_path = path.c_str();
+    FILE* read_ptr = fopen(image_path, "rb");
+    fread(host_pinned_src, image_size, 1, read_ptr);
+    cv::Mat read_image_mat(height, width, CV_8UC3, host_pinned_src);
+    cudaHostGetDevicePointer(&device_pinned_src, host_pinned_src, 0);
 
     // declare 
     float
@@ -56,19 +67,19 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
         fftPlanFwd,
         fftPlanInv;
 
-    uchar* src_ptr = src.data;
-    const int dataH = src.rows;
-    const int dataW = src.cols;
+    uchar* src_ptr = host_pinned_src;
+    const int dataH = height;
+    const int dataW = width;
     const int depth = para.numberOfFilter;
     const int fftH = snapTransformSize(dataH + para.kernelH - 1);
     const int fftW = snapTransformSize(dataW + para.kernelW - 1);
-    const unsigned long src_size = src.cols * src.rows * src.channels();
+    const unsigned long src_size = width * height * 3;
     const unsigned long src_byte_size = src_size * sizeof(uchar);
-    const unsigned long src_c_size = src.cols * src.rows;
+    const unsigned long src_c_size = width * height;
     const unsigned long src_c_byte_size = src_c_size * sizeof(float);
 
-    // host data
-    cudaHostRegister(src_ptr, src_byte_size, cudaHostRegisterDefault);
+    //// host data
+    //cudaHostRegister(src_ptr, src_byte_size, cudaHostRegisterDefault);
 
 #if TIMER
     auto t2 = std::chrono::system_clock::now();
@@ -93,8 +104,8 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
 
     int block_x_size = TILE_DIM;
     int block_y_size = BLOCK_DIM;
-    int grid_x_size = (src.cols + TILE_DIM - 1) / TILE_DIM;
-    int pruned_rows = src.rows / D_NUM_STREAMS;
+    int grid_x_size = (width + TILE_DIM - 1) / TILE_DIM;
+    int pruned_rows = height / D_NUM_STREAMS;
     int grid_y_size = (pruned_rows + TILE_DIM - 1) / TILE_DIM;
 
     dim3 block(block_x_size, block_y_size);
@@ -106,8 +117,8 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
     for (int i = 0; i < D_NUM_STREAMS; i++) {
         src_offset = i * SRC_DATA_PER_STREAM;
         dst_offset = i * DST_DATA_PER_STREAM;
-        gpuErrorCheck(cudaMemcpyAsync(&device_src_ptr[src_offset], &src_ptr[src_offset], SRC_BYTES_PER_STREAM, cudaMemcpyHostToDevice, stream[i]));
-        extractLChannelWithInstrinicFunction << < grid, block, 0, stream[i] >> > (&device_src_ptr[src_offset], &device_src_c_ptr[dst_offset], src.cols, pruned_rows, src.channels());
+        //gpuErrorCheck(cudaMemcpyAsync(&device_src_ptr[src_offset], &src_ptr[src_offset], SRC_BYTES_PER_STREAM, cudaMemcpyHostToDevice, stream[i]));
+        extractLChannelWithInstrinicFunction << < grid, block, 0, stream[i] >> > (&device_pinned_src[src_offset], &device_src_c_ptr[dst_offset], width, pruned_rows, 3);
     }
 
 #if TIMER
@@ -120,7 +131,7 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
         gpuErrorCheck(cudaStreamDestroy(stream[i]));
     }
 
-    gpuErrorCheck(cudaHostUnregister(src_ptr));
+    //gpuErrorCheck(cudaHostUnregister(src_ptr));
     gpuErrorCheck(cudaFree(device_src_ptr));
 
 #if TIMER

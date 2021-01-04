@@ -11,4 +11,4 @@
 
 
 __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int nx, int ny, int nz);
-void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para);
+void getHairMask(std::string path, int width, int height, cv::Mat& dst, HairDetectionParameters para);

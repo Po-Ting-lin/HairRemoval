@@ -16,5 +16,5 @@ int entropyThesholding(cv::Mat& glcm);
 void cleanIsolatedComponent(cv::Mat& src, HairDetectionParameters para);
 void inpaintHair(cv::Mat& src, cv::Mat& dst, cv::Mat& mask, HairDetectionParameters para);
 void cvtL(cv::Mat& src, cv::Mat& dst);
-bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU);
+bool hairDetection(std::string path, int width, int height, cv::Mat& dst, bool isGPU);
 

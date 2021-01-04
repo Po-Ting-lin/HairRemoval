@@ -232,17 +232,7 @@ void cvtL(cv::Mat& src, cv::Mat& dst) {
     }
 }
 
-bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
-    if (!src.data) {
-        std::cout << "Error: the image wasn't correctly loaded." << std::endl;
-        return false;
-    }
-
-    if (src.type() != CV_8UC3) {
-        std::cout << "input image must be CV_8UC3! " << std::endl;
-        return false;
-    }
-
+bool hairDetection(std::string path, int width, int height, cv::Mat& dst, bool isGPU) {
     HairDetectionParameters para = HairDetectionParameters();
     SetInfo(para);
     
@@ -250,14 +240,14 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     auto t1 = std::chrono::system_clock::now();
 #endif
 
-    cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U, cv::Scalar(0));
+    cv::Mat mask(cv::Size(width, height), CV_8U, cv::Scalar(0));
     if (isGPU) {
-        getHairMask(src, mask, para);
+        getHairMask(path, width, height, mask, para);
     }
     else {
-        cv::Mat chL(cv::Size(src.cols, src.rows), CV_8U);
-        cvtL(src, chL);
-        Gabor(chL, mask, para);
+        //cv::Mat chL(cv::Size(src.cols, src.rows), CV_8U);
+        //cvtL(src, chL);
+        //Gabor(chL, mask, para);
     }
 
 #if TIMER
