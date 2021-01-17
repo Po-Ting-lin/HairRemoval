@@ -5,16 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <cufft.h>
+#include <opencv2/opencv.hpp>
 #include "cuda_runtime.h"
 #include "device_launch_parameters.h"
 #include "cuda_error.cuh"
-#include <opencv2/opencv.hpp>
 #include "parameters.h"
 #include "utils.h"
 
 typedef unsigned int uint;
-
-#define POWER_OF_TWO 1
 
 #ifdef __CUDACC__
 typedef float2 fComplex;
@@ -26,19 +24,21 @@ typedef struct
 } fComplex;
 #endif
 
-inline float getRand(void)
-{
-    return (float)(rand() % 16);
-}
-
-inline __device__ void mulAndScale(fComplex& a, const fComplex& b, const float& c)
-{
+inline __device__ void mulAndScale(
+    fComplex& a,
+    const fComplex& b,
+    const float& c
+) {
     fComplex t = { c * (a.x * b.x - a.y * b.y), c * (a.y * b.x + a.x * b.y) };
     a = t;
 }
 
-inline __device__ void mulAndScaleModified(const fComplex& a, const fComplex& b, const float& c, fComplex& d)
-{
+inline __device__ void mulAndScaleModified(
+    const fComplex& a,
+    const fComplex& b,
+    const float& c,
+    fComplex& d
+) {
     fComplex t = { c * (a.x * b.x - a.y * b.y), c * (a.y * b.x + a.x * b.y) };
     d = t;
 }
@@ -84,8 +84,6 @@ __global__ void cubeReductionKernel(
     int dataW, 
     int depth
 );
-
-int snapTransformSize(int dataSize);
 
 void convolutionClampToBorderCPU(
     float* h_Result,
@@ -142,5 +140,5 @@ void cubeReduction(
     int depth
 );
 
-float* gaborFilterCube(HairDetectionParameters para);
+float* initGaborFilterCube(HairDetectionInfo para);
 

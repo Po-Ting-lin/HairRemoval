@@ -1,4 +1,4 @@
-#include "hair_detection.h"
+#include "hair_detection_main.h"
 #include "utils.h"
 
 int main() {
@@ -12,7 +12,7 @@ int main() {
 
 	//displayImage(image, "image", false);
 
-	///*******************************************************/
+	/*******************************************************/
 	bool isGPU = true;
 	auto start = std::chrono::system_clock::now();
 	hairDetection(image, output, isGPU);

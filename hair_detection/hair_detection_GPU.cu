@@ -1,7 +1,7 @@
-#include "hair_detection_kernel.cuh"
+#include <cuFFT.h>
+#include "hair_detection_GPU.cuh"
 #include "utils.h"
 #include "parameters.h"
-#include <cuFFT.h>
 
 
 __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int nx, int ny, int nz) {
@@ -32,7 +32,7 @@ __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int
     }
 }
 
-void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
+void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
 
 #if TIMER
     auto t1 = std::chrono::system_clock::now();
@@ -128,7 +128,7 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
 #endif
 
     // init data
-    float* h_kernels = gaborFilterCube(para);
+    float* h_kernels = initGaborFilterCube(para);
 
 #if TIMER
     auto t5 = std::chrono::system_clock::now();
@@ -136,12 +136,10 @@ void getHairMask(cv::Mat& src, cv::Mat& dst, HairDetectionParameters para) {
 
     // allocation
     gpuErrorCheck(cudaMalloc((void**)&d_Kernel, para.kernelH * para.kernelW * para.numberOfFilter * sizeof(float)));
-
     gpuErrorCheck(cudaMalloc((void**)&d_PaddedData, fftH * fftW * sizeof(float)));
     gpuErrorCheck(cudaMalloc((void**)&d_PaddedKernel, fftH * fftW * sizeof(float)));
     gpuErrorCheck(cudaMalloc((void**)&d_DepthResult, fftH * fftW * para.numberOfFilter * sizeof(float)));
     gpuErrorCheck(cudaMalloc((void**)&d_Result, dataH * dataW * sizeof(uchar)));
-
     gpuErrorCheck(cudaMalloc((void**)&d_DataSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));
     gpuErrorCheck(cudaMalloc((void**)&d_KernelSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));
     gpuErrorCheck(cudaMalloc((void**)&d_TempSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));

@@ -201,7 +201,7 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     auto t35 = std::chrono::system_clock::now();
 #endif
 
-    BlockInfo info = getBlockInfo(dynamic_range);
+    EntropyThresholdDeviceInfo info(dynamic_range);
     bool reversed = false;
     getAreaArray(d_data, d_pA, stream, info);
     getMeanArray(d_data, d_pA, d_mA, reversed, stream, info);
@@ -269,21 +269,6 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     return min_t;
 }
 
-BlockInfo getBlockInfo(int full_width) {
-    struct BlockInfo info;
-    info.fullWidth = full_width;
-    info.startThreshold = TILE_DIM - 1;
-    info.preSumBlock = new dim3(TILE_DIM, TILE_DIM);
-    info.sumBlock = new dim3(TILE_DIM, TILE_DIM);
-    info.sumSumBlock = new dim3(iDivUp(full_width, TILE_DIM) * iDivUp(full_width, TILE_DIM));
-    info.sumSumGrid = new dim3(1);
-    info.preSumSmemSize = 0;
-    info.sumSmemSize = TILE_DIM * TILE_DIM * sizeof(float);
-    info.sumSumSmemSize = iDivUp(full_width, TILE_DIM) * iDivUp(full_width, TILE_DIM) * sizeof(float);
-    info.sumMatrixSize = iDivUp(full_width, TILE_DIM) * iDivUp(full_width, TILE_DIM);
-    return info;
-}
-
 void reversedData(float* d_data, float* d_reversed_data, int full_width) {
     dim3 block(TILE_DIM, TILE_DIM);
     dim3 grid(iDivUp(full_width, TILE_DIM), iDivUp(full_width, TILE_DIM));
@@ -291,7 +276,7 @@ void reversedData(float* d_data, float* d_reversed_data, int full_width) {
     gpuErrorCheck(cudaDeviceSynchronize());
 }
 
-void getAreaArray(float* d_data, float* d_pA, cudaStream_t* stream, BlockInfo& info) {
+void getAreaArray(float* d_data, float* d_pA, cudaStream_t* stream, EntropyThresholdDeviceInfo& info) {
     float* d_buf, * d_sum_matrix;
     int sum_matirx_size = info.sumMatrixSize;
     gpuErrorCheck(cudaMalloc((void**)&d_buf, info.fullWidth * info.fullWidth * info.fullWidth * sizeof(float)));
@@ -319,7 +304,7 @@ void getAreaArray(float* d_data, float* d_pA, cudaStream_t* stream, BlockInfo& i
     gpuErrorCheck(cudaFree(d_sum_matrix));
 }
 
-void getMeanArray(float* d_data, float* d_pA, float* d_mA, bool reversed, cudaStream_t* stream, BlockInfo& info) {
+void getMeanArray(float* d_data, float* d_pA, float* d_mA, bool reversed, cudaStream_t* stream, EntropyThresholdDeviceInfo& info) {
     float* d_buf, * d_data_rc, * d_sum_matrix;
     int sum_matirx_size = info.sumMatrixSize;
     dim3 rc_block(TILE_DIM, TILE_DIM);
@@ -359,7 +344,7 @@ void getMeanArray(float* d_data, float* d_pA, float* d_mA, bool reversed, cudaSt
     gpuErrorCheck(cudaFree(d_sum_matrix));
 }
 
-void getEntropyArray(float* d_data, float* d_mA, float* d_eA, bool reversed, cudaStream_t* stream, BlockInfo& info) {
+void getEntropyArray(float* d_data, float* d_mA, float* d_eA, bool reversed, cudaStream_t* stream, EntropyThresholdDeviceInfo& info) {
     float* d_buf, * d_sum_matrix;
     int sum_matirx_size = info.sumMatrixSize;
     dim3 rc_block(TILE_DIM, TILE_DIM);
@@ -390,7 +375,7 @@ void getEntropyArray(float* d_data, float* d_mA, float* d_eA, bool reversed, cud
     gpuErrorCheck(cudaFree(d_sum_matrix));
 }
 
-void sumMatrixStream(float* d_buf, float* d_arr, float* d_sum_matrix, BlockInfo& info, int threshold, cudaStream_t stream) {
+void sumMatrixStream(float* d_buf, float* d_arr, float* d_sum_matrix, EntropyThresholdDeviceInfo& info, int threshold, cudaStream_t stream) {
     if (info.targetWidth != info.multipleWidth) {
         preSumXMatrixKernel << <*info.preSumGrid, *info.preSumBlock, info.preSumSmemSize, stream >> > (d_buf, info.fullWidth, info.targetWidth, info.multipleWidth);
         preSumYMatrixKernel << <*info.preSumGrid, *info.preSumBlock, info.preSumSmemSize, stream >> > (d_buf, info.fullWidth, info.targetWidth, info.multipleWidth);
