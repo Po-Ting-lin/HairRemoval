@@ -1,27 +1,5 @@
 #include "entropy_thresholding.cuh"
 
-__global__ void preSumXMatrixKernel(float* src, int nx, int raw_width, int new_width) {
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int diff = raw_width - new_width;
-    if (x < raw_width && y < raw_width) {
-        if ((x < new_width) && (x >= new_width - diff)) {
-            src[y * nx + x] += src[y * nx + x + diff];
-        }
-    }
-}
-
-__global__ void preSumYMatrixKernel(float* src, int nx, int raw_width, int new_width) {
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int diff = raw_width - new_width;
-    if (x < raw_width && y < raw_width) {
-        if ((x < new_width && y < new_width) && (y >= new_width - diff)) {
-            src[y * nx + x] += src[(y + diff) * nx + x];
-        }
-    }
-}
-
 __global__ void sumMatirxKernel(float* src, int nx, int multiple_width, float* d_sum_matrix) {
     __shared__ float smem[TILE_DIM][TILE_DIM];
     int x = threadIdx.x + blockDim.x * blockIdx.x;
@@ -73,7 +51,7 @@ __global__ void sumSumMatrixKernel(float* sum_matrix, float* d_pA, int sum_matri
     else {
         smem[tid] = 0.0f;
     }
-    __syncthreads(); // important
+    __syncthreads();
 
     // unrolling warp
     if (tid < 32) {
@@ -88,6 +66,28 @@ __global__ void sumSumMatrixKernel(float* sum_matrix, float* d_pA, int sum_matri
 
     if (tid == 0) {
         d_pA[threshold] = (float)(smem[0]);
+    }
+}
+
+__global__ void preSumXMatrixKernel(float* src, int nx, int raw_width, int new_width) {
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int diff = raw_width - new_width;
+    if (x < raw_width && y < raw_width) {
+        if ((x < new_width) && (x >= new_width - diff)) {
+            src[y * nx + x] += src[y * nx + x + diff];
+        }
+    }
+}
+
+__global__ void preSumYMatrixKernel(float* src, int nx, int raw_width, int new_width) {
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    int diff = raw_width - new_width;
+    if (x < raw_width && y < raw_width) {
+        if ((x < new_width && y < new_width) && (y >= new_width - diff)) {
+            src[y * nx + x] += src[(y + diff) * nx + x];
+        }
     }
 }
 

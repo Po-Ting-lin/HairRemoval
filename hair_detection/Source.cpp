@@ -2,10 +2,10 @@
 #include "utils.h"
 
 int main() {
-	cv::Mat image, output;
-	image = cv::imread(R"(raw2560.jpg)");
+	cv::Mat src, dst;
+	src = cv::imread(R"(raw2560.jpg)");
 
-	if (!image.data) {
+	if (!src.data) {
 		std::cout << "Error: the image wasn't correctly loaded." << std::endl;
 		return -1;
 	}
@@ -15,15 +15,15 @@ int main() {
 	/*******************************************************/
 	bool isGPU = true;
 	auto start = std::chrono::system_clock::now();
-	hairDetection(image, output, isGPU);
+	hairDetection(src, dst, isGPU);
 	auto end = std::chrono::system_clock::now();
 
 	// time
 	std::chrono::duration<double> elapsed_seconds = end - start;
-	std::cout << "time consume: " << elapsed_seconds.count() << std::endl;
+	std::cout << "total time consume: " << elapsed_seconds.count() << std::endl;
 	/*******************************************************/
 
-	displayImage(output, "output", true);
+	displayImage(dst, "output", true);
 
 	return 0;
 }
