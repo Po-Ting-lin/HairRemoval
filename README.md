@@ -7,7 +7,7 @@ Implementation of hair removal in CUDA. The methods of hair detection refer to t
 
 
 Three versions of hair detection with their performance, respectively.  
-![](/sample/performance.png)
+![](/sample/time.png)
 
 * hair inpainting
 
