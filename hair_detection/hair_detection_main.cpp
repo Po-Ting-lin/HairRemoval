@@ -36,7 +36,7 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     auto t5 = std::chrono::system_clock::now();
 #endif
 
-    int threshold = isGPU? entropyThesholdingGPU(glcm) : entropyThesholding(glcm);
+    int threshold = isGPU? entropyThesholding(glcm) : entropyThesholding(glcm);
     cv::threshold(mask, mask, threshold, DYNAMICRANGE - 1, 0);
     glcm.release();
 
