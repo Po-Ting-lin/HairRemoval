@@ -180,13 +180,22 @@ public:
 
 	float* address() { return (float*)(this->data); }
 
-	m256 operator + (m256 a)
-	{
-		*(this->data) = _mm256_add_ps(*(this->data), *((&a)->data));
-		return *this;
-	};
+    void set8Positions (float a)
+    {
+        *(this->data) = _mm256_set_ps(a + 7.0f, a + 6.0f, a + 5.0f, a + 4.0f, a + 3.0f, a + 2.0f, a + 1.0f, a);
+    }
 
-	m256 operator > (m256 a)
+    void operator = (float a)
+    {
+        *(this->data) = _mm256_set1_ps(a);
+    }
+
+    void operator = (m256 a)
+    {
+        *(this->data) = *((&a)->data);
+    };
+
+	m256 operator + (m256 a)
 	{
 		*(this->data) = _mm256_add_ps(*(this->data), *((&a)->data));
 		return *this;
@@ -204,43 +213,10 @@ public:
 		return *this;
 	}
 
-	void operator / (m256 a)
+	m256 operator / (m256 a)
 	{
-		*(this->data) = _mm256_div_ps(*(this->data), *((&a)->data));
-	}
-
-
-	m256 operator >> (m256 a)
-	{
-		float b[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
-		m256 output(b);
-		*(output.data) = _mm256_add_ps(*(this->data), *((&a)->data));
-		return output;
-	};
-
-	void operator += (__m256 a)
-	{
-		*(this->data) = _mm256_add_ps(*(this->data), a);
-	}
-
-	void operator += (m256 a)
-	{
-		*(this->data) = _mm256_add_ps(*(this->data), *((&a)->data));
-	}
-
-	void operator += (int a)
-	{
-		this->data += a;
-	}
-
-	void operator = (float a)
-	{
-		*(this->data) = _mm256_setr_ps(a, a, a, a, a, a, a, a);
-	}
-
-	void operator /= (m256& a)
-	{
-		*(this->data) = _mm256_div_ps(*(this->data), *(a.data));
+        *(this->data) = _mm256_div_ps(*(this->data), *((&a)->data));
+        return *this;
 	}
 };
 
