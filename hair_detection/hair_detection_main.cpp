@@ -29,16 +29,12 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     auto t4 = std::chrono::system_clock::now();
 #endif
 
-    cv::Mat glcm(cv::Size(DYNAMICRANGE, DYNAMICRANGE), CV_32F, cv::Scalar(0));
-    getGrayLevelCoOccurrenceMatrix(mask, glcm);
+    EntropyBasedThreshold* thresholding = new EntropyBasedThreshold(mask);
 
 #if TIMER
     auto t5 = std::chrono::system_clock::now();
 #endif
-
-    int threshold = isGPU? entropyThesholding(glcm) : entropyThesholding(glcm);
-    cv::threshold(mask, mask, threshold, DYNAMICRANGE - 1, 0);
-    glcm.release();
+    cv::threshold(mask, mask, thresholding->Process(), DYNAMICRANGE - 1, 0);
 
 #if TIMER
     auto t6 = std::chrono::system_clock::now();

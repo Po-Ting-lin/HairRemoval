@@ -165,6 +165,86 @@ static void Display2DArray(float* src, int nx, int ny) {
 }
 
 #if ISAVX
+#include <math.h>
+#include <emmintrin.h>
+#include <smmintrin.h>
+#include <immintrin.h>
+
+class m256
+{
+private:
+	__m256* data;
+public:
+	m256(float* a) { this->data = (__m256*)a; }
+	m256() {}
+
+	float* address() { return (float*)(this->data); }
+
+	m256 operator + (m256 a)
+	{
+		*(this->data) = _mm256_add_ps(*(this->data), *((&a)->data));
+		return *this;
+	};
+
+	m256 operator > (m256 a)
+	{
+		*(this->data) = _mm256_add_ps(*(this->data), *((&a)->data));
+		return *this;
+	};
+
+	m256 operator - (m256 a)
+	{
+		*(this->data) = _mm256_sub_ps(*(this->data), *((&a)->data));
+		return *this;
+	}
+
+	m256 operator * (m256 a)
+	{
+		*(this->data) = _mm256_mul_ps(*(this->data), *((&a)->data));
+		return *this;
+	}
+
+	void operator / (m256 a)
+	{
+		*(this->data) = _mm256_div_ps(*(this->data), *((&a)->data));
+	}
+
+
+	m256 operator >> (m256 a)
+	{
+		float b[] = { 0, 0, 0, 0, 0, 0, 0, 0 };
+		m256 output(b);
+		*(output.data) = _mm256_add_ps(*(this->data), *((&a)->data));
+		return output;
+	};
+
+	void operator += (__m256 a)
+	{
+		*(this->data) = _mm256_add_ps(*(this->data), a);
+	}
+
+	void operator += (m256 a)
+	{
+		*(this->data) = _mm256_add_ps(*(this->data), *((&a)->data));
+	}
+
+	void operator += (int a)
+	{
+		this->data += a;
+	}
+
+	void operator = (float a)
+	{
+		*(this->data) = _mm256_setr_ps(a, a, a, a, a, a, a, a);
+	}
+
+	void operator /= (m256& a)
+	{
+		*(this->data) = _mm256_div_ps(*(this->data), *(a.data));
+	}
+};
+
+
 // https://stackoverflow.com/questions/13219146/how-to-sum-m256-horizontally
 // x = ( x7, x6, x5, x4, x3, x2, x1, x0 )
 static float sum8(__m256 x) {
