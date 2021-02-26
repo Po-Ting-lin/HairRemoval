@@ -8,7 +8,7 @@
 #define POWER_OF_TWO 1
 #define LOAD_FLOAT(i) d_Src[i]
 
-#define TIMER false
+#define TIMER true
 #define DEBUG false
 
 class HairDetectionInfo {

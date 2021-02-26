@@ -59,20 +59,16 @@ int EntropyBasedThreshold::_entropyThesholding() {
         float entropyC = 0.0f;
 
 #if ISAVX
-        __m256 _pA = _mm256_set1_ps(0.0f);
-        __m256 _pC = _mm256_set1_ps(0.0f);
-        __m256 _mA = _mm256_set1_ps(0.0f);
-        __m256 _mC = _mm256_set1_ps(0.0f);
-        __m256 _eA = _mm256_set1_ps(0.0f);
-        __m256 _eC = _mm256_set1_ps(0.0f);
-        __m256 _p, _x, _r, _x2;
-        __m256 _rcp;
-        __m256 _rc;
+        __m256 _pA = SET8F(0.0f);
+        __m256 _pC = SET8F(0.0f);
+        __m256 _mA = SET8F(0.0f);
+        __m256 _mC = SET8F(0.0f);
+        __m256 _eA = SET8F(0.0f);
+        __m256 _eC = SET8F(0.0f);
+        __m256 _p, _x, _r, _rc;
         __m256 _epsilon;
-        __m256i _x_mask;
         __m256 _meanA, _meanC;
         __m256 _f1, _f2;
-        __m256 _meanAp, _meanCp;
 #endif
         float* curptr = nullptr;
 
@@ -80,18 +76,12 @@ int EntropyBasedThreshold::_entropyThesholding() {
         for (int r = 0; r < threshold + 1; r++) {
 #if ISAVX
             for (int c = 0; c < threshold + 1; c += 8) {
-                int i = r * cols + c;
-                _x = _mm256_set_ps(c + 7.0f, c + 6.0f, c + 5.0f, c + 4.0f, c + 3.0f, c + 2.0f, c + 1.0f, c);
-                _x2 = _mm256_set1_ps(threshold + 1);
-                _x_mask = _mm256_cvtps_epi32(_mm256_cmp_ps(_x, _x2, _CMP_LT_OS));
-                _p = _mm256_set1_ps(0.0f);
-                _p = _mm256_maskload_ps(&glcmPtr[i], _x_mask);
-                _pA = _mm256_add_ps(_pA, _p);
+                _loadPixel(_x, _p, cols, r, c, threshold + 1);
+                _pA = ADD8F(_pA, _p);
             }
 #else
             for (int c = 0; c < threshold + 1; c++) {
-                curptr = glcmPtr + (r * cols + c);
-                pA += (*curptr);
+                pA += glcmPtr[r * cols + c];
             }
 #endif
         }
@@ -100,46 +90,32 @@ int EntropyBasedThreshold::_entropyThesholding() {
         for (int r = threshold + 1; r < DYNAMICRANGE; r++) {
 #if ISAVX
             for (int c = threshold + 1; c < DYNAMICRANGE; c += 8) {
-                int i = r * cols + c;
-                _x = _mm256_set_ps(c + 7.0f, c + 6.0f, c + 5.0f, c + 4.0f, c + 3.0f, c + 2.0f, c + 1.0f, c);
-                _x2 = _mm256_set1_ps(DYNAMICRANGE);
-                _x_mask = _mm256_cvtps_epi32(_mm256_cmp_ps(_x, _x2, _CMP_LT_OS));
-                _p = _mm256_set1_ps(0.0f);
-                _p = _mm256_maskload_ps(&glcmPtr[i], _x_mask);
-                _pC = _mm256_add_ps(_pC, _p);
+                _loadPixel(_x, _p, cols, r, c, DYNAMICRANGE);
+                _pC = ADD8F(_pC, _p);
             }
 #else
             for (int c = threshold + 1; c < DYNAMICRANGE; c++) {
-                curptr = glcmPtr + (r * cols + c);
-                pC += (*curptr);
+                pC += glcmPtr[r * cols + c];
             }
 #endif
         }
 
 #if ISAVX
-        pA = sum8(_pA);
-        pC = sum8(_pC);
+        pA = sum8f(_pA);
+        pC = sum8f(_pC);
 #endif
 
         // meanA
         for (int r = 0; r < threshold + 1; r++) {
 #if ISAVX
             for (int c = 0; c < threshold + 1; c += 8) {
-                int i = r * cols + c;
-                _x = _mm256_set_ps(c + 7.0f, c + 6.0f, c + 5.0f, c + 4.0f, c + 3.0f, c + 2.0f, c + 1.0f, c);
-                _x2 = _mm256_set1_ps(threshold + 1);
-                _x_mask = _mm256_cvtps_epi32(_mm256_cmp_ps(_x, _x2, _CMP_LT_OS));
-                _p = _mm256_set1_ps(0.0f);
-                _p = _mm256_maskload_ps(&glcmPtr[i], _x_mask);
-
-                _r = _mm256_set1_ps(r);
-                _rcp = _mm256_mul_ps(_mm256_mul_ps(_r, _x), _p);
-                _mA = _mm256_add_ps(_mA, _rcp);
+                _loadPixel(_x, _p, cols, r, c, threshold + 1);
+                _r = SET8F(r);
+                _mA = ADD8F(_mA, MUL8F(MUL8F(_r, _x), _p));
             }
 #else
             for (int c = 0; c < threshold + 1; c++) {
-                curptr = glcmPtr + (r * cols + c);
-                meanA += ((float)r) * ((float)c) * (*curptr);
+                meanA += ((float)r) * ((float)c) * glcmPtr[r * cols + c];
             }
 #endif
         }
@@ -148,28 +124,20 @@ int EntropyBasedThreshold::_entropyThesholding() {
         for (int r = threshold + 1; r < DYNAMICRANGE; r++) {
 #if ISAVX
             for (int c = threshold + 1; c < DYNAMICRANGE; c += 8) {
-                int i = r * cols + c;
-                _x = _mm256_set_ps(c + 7.0f, c + 6.0f, c + 5.0f, c + 4.0f, c + 3.0f, c + 2.0f, c + 1.0f, c);
-                _x2 = _mm256_set1_ps(DYNAMICRANGE);
-                _x_mask = _mm256_cvtps_epi32(_mm256_cmp_ps(_x, _x2, _CMP_LT_OS));
-                _p = _mm256_set1_ps(0.0f);
-                _p = _mm256_maskload_ps(&glcmPtr[i], _x_mask);
-
-                _r = _mm256_set1_ps(r);
-                _rcp = _mm256_mul_ps(_mm256_mul_ps(_r, _x), _p);
-                _mC = _mm256_add_ps(_mC, _rcp);
+                _loadPixel(_x, _p, cols, r, c, DYNAMICRANGE);
+                _r = SET8F(r);
+                _mC = ADD8F(_mC, MUL8F(MUL8F(_r, _x), _p));
             }
 #else
             for (int c = threshold + 1; c < DYNAMICRANGE; c++) {
-                curptr = glcmPtr + (r * cols + c);
-                meanC += ((float)r) * ((float)c) * (*curptr);
+                meanC += ((float)r) * ((float)c) * glcmPtr[r * cols + c];
             }
 #endif
         }
 
 #if ISAVX
-        meanA = sum8(_mA);
-        meanC = sum8(_mC);
+        meanA = sum8f(_mA);
+        meanC = sum8f(_mC);
 #endif
         meanA /= pA;
         meanC /= pC;
@@ -178,23 +146,14 @@ int EntropyBasedThreshold::_entropyThesholding() {
         for (int r = 0; r < threshold + 1; r++) {
 #if ISAVX
             for (int c = 0; c < threshold + 1; c += 8) {
-                int i = r * cols + c;
-                _x = _mm256_set_ps(c + 7.0f, c + 6.0f, c + 5.0f, c + 4.0f, c + 3.0f, c + 2.0f, c + 1.0f, c);
-                _x2 = _mm256_set1_ps(threshold + 1);
-                _x_mask = _mm256_cvtps_epi32(_mm256_cmp_ps(_x, _x2, _CMP_LT_OS));
-                _p = _mm256_set1_ps(0.0f);
-                _p = _mm256_maskload_ps(&glcmPtr[i], _x_mask);
-
-                _r = _mm256_set1_ps(r);
-                _rc = _mm256_mul_ps(_r, _x);
-                _rcp = _mm256_mul_ps(_rc, _p);
-                _epsilon = _mm256_set1_ps(EPSILON);
-
-                _meanA = _mm256_set1_ps(meanA);
-                _f1 = _mm256_mul_ps(_rcp, _mm256_log2_ps(_mm256_div_ps(_mm256_add_ps(_rc, _epsilon), _mm256_add_ps(_meanA, _epsilon))));
-                _meanAp = _mm256_mul_ps(_meanA, _p);
-                _f2 = _mm256_mul_ps(_meanAp, _mm256_log2_ps(_mm256_add_ps(_mm256_div_ps(_mm256_div_ps(_meanA, _mm256_add_ps(_r, _epsilon)), _mm256_add_ps(_x, _epsilon)), _epsilon)));
-                _eA = _mm256_add_ps(_eA, _mm256_add_ps(_f1, _f2));
+                _loadPixel(_x, _p, cols, r, c, threshold + 1);
+                _r = SET8F(r);
+                _rc = MUL8F(_r, _x);
+                _epsilon = SET8F(EPSILON);
+                _meanA = SET8F(meanA);
+                _f1 = MUL8F(MUL8F(_rc, _p), LOG28F(DIV8F(ADD8F(_rc, _epsilon), ADD8F(_meanA, _epsilon))));
+                _f2 = MUL8F(MUL8F(_meanA, _p), LOG28F(ADD8F(DIV8F(DIV8F(_meanA, ADD8F(_r, _epsilon)), ADD8F(_x, _epsilon)), _epsilon)));
+                _eA = ADD8F(_eA, ADD8F(_f1, _f2));
             }
 #else
             for (int c = 0; c < threshold + 1; c++) {
@@ -209,22 +168,14 @@ int EntropyBasedThreshold::_entropyThesholding() {
         for (int r = threshold + 1; r < DYNAMICRANGE; r++) {
 #if ISAVX
             for (int c = threshold + 1; c < DYNAMICRANGE; c += 8) {
-                int i = r * cols + c;
-                _x = _mm256_set_ps(c + 7.0f, c + 6.0f, c + 5.0f, c + 4.0f, c + 3.0f, c + 2.0f, c + 1.0f, c);
-                _x2 = _mm256_set1_ps(DYNAMICRANGE);
-                _x_mask = _mm256_cvtps_epi32(_mm256_cmp_ps(_x, _x2, _CMP_LT_OS));
-                _p = _mm256_set1_ps(0.0f);
-                _p = _mm256_maskload_ps(&glcmPtr[i], _x_mask);
-
-                _r = _mm256_set1_ps(r);
-                _rc = _mm256_mul_ps(_r, _x);
-                _rcp = _mm256_mul_ps(_rc, _p);
-                _epsilon = _mm256_set1_ps(EPSILON);
-                _meanC = _mm256_set1_ps(meanC);
-                _f1 = _mm256_mul_ps(_rcp, _mm256_log2_ps(_mm256_div_ps(_mm256_add_ps(_rc, _epsilon), _mm256_add_ps(_meanC, _epsilon))));
-                _meanCp = _mm256_mul_ps(_meanC, _p);
-                _f2 = _mm256_mul_ps(_meanCp, _mm256_log2_ps(_mm256_add_ps(_mm256_div_ps(_mm256_div_ps(_meanC, _mm256_add_ps(_r, _epsilon)), _mm256_add_ps(_x, _epsilon)), _epsilon)));
-                _eC = _mm256_add_ps(_eC, _mm256_add_ps(_f1, _f2));
+                _loadPixel(_x, _p, cols, r, c, DYNAMICRANGE);
+                _r = SET8F(r);
+                _rc = MUL8F(_r, _x);
+                _epsilon = SET8F(EPSILON);
+                _meanC = SET8F(meanC);
+                _f1 = MUL8F(MUL8F(_rc, _p), LOG28F(DIV8F(ADD8F(_rc, _epsilon), ADD8F(_meanC, _epsilon))));
+                _f2 = MUL8F(MUL8F(_meanC, _p) , LOG28F(ADD8F(DIV8F(DIV8F(_meanC, ADD8F(_r, _epsilon)), ADD8F(_x, _epsilon)), _epsilon)));
+                _eC = ADD8F(_eC, ADD8F(_f1, _f2));
             }
 #else
             for (int c = threshold + 1; c < DYNAMICRANGE; c++) {
@@ -236,8 +187,8 @@ int EntropyBasedThreshold::_entropyThesholding() {
         }
 
 #if ISAVX
-        entropyA = sum8(_eA);
-        entropyC = sum8(_eC);
+        entropyA = sum8f(_eA);
+        entropyC = sum8f(_eC);
 #endif
 
 #pragma omp critical
@@ -248,7 +199,14 @@ int EntropyBasedThreshold::_entropyThesholding() {
             }
         }
     }
-
-    std::cout << bestT << std::endl;
     return bestT;
 }
+
+#if ISAVX
+inline void EntropyBasedThreshold::_loadPixel(__m256& x, __m256& p, int width, int r, int c, int cBoundary) {
+    x = SET8FE(c + 7.0f, c + 6.0f, c + 5.0f, c + 4.0f, c + 3.0f, c + 2.0f, c + 1.0f, c);
+    __m256i _x_mask = GETMASK(x, SET8F(cBoundary));
+    p = SET8F(0.0f);
+    p = MASKLOAD(&_glcm[r * width + c], _x_mask);
+}
+#endif

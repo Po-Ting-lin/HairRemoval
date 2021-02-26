@@ -20,5 +20,6 @@ __global__ void extractLChannelWithInstrinicFunction(
 void getHairMaskGPU(
 	cv::Mat& src,
 	cv::Mat& dst,
+	uchar*& dSrc,
 	HairDetectionInfo para
 );

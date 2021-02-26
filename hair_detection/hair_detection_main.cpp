@@ -1,4 +1,6 @@
 #include "hair_detection_main.h"
+#include "hair_inpainting_GPU.cuh"
+
 
 bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     if (!src.data) {
@@ -18,8 +20,9 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
 #endif
 
     cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U, cv::Scalar(0));
+    uchar* d_src = nullptr;
     if (isGPU) {
-        getHairMaskGPU(src, mask, para);
+        getHairMaskGPU(src, mask, d_src, para);
     }
     else {
         getHairMaskCPU(src, mask, para);
@@ -47,16 +50,24 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
 #endif
 
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5), cv::Point(-1, -1));
-    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 1);
-    //inpaintHair(src, dst, mask, para);
+    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 2);
+    cv::Mat removed_dst;
+    HairInpaintInfo hair_inpainting_info(
+        src.cols,
+        src.rows,
+        src.channels(),
+        2);
+    hairInpainting(src, mask, d_src, removed_dst, hair_inpainting_info);
 
-    dst = mask;
+    dst = removed_dst;
 
 #if TIMER
+    auto t8 = std::chrono::system_clock::now();
     printTime(t1, t4, "main -- get hair mask");
     printTime(t4, t5, "main -- glcm_cal");
     printTime(t5, t6, "main -- entropyThesholding");
     printTime(t6, t7, "main -- cleanIsolatedComponent");
+    printTime(t7, t8, "main -- inpainting");
 #endif
     return true;
 }
