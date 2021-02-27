@@ -32,7 +32,7 @@ __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int
     }
 }
 
-void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, uchar*& dSrc, HairDetectionInfo para) {
+void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
 
 #if TIMER
     auto t1 = std::chrono::system_clock::now();
@@ -121,8 +121,7 @@ void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, uchar*& dSrc, HairDetectionInfo 
     }
 
     gpuErrorCheck(cudaHostUnregister(src_ptr));
-    dSrc = device_src_ptr;
-    //gpuErrorCheck(cudaFree(device_src_ptr)); // need not free
+    gpuErrorCheck(cudaFree(device_src_ptr));
 
 #if TIMER
     auto t4 = std::chrono::system_clock::now();

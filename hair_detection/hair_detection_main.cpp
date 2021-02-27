@@ -1,5 +1,6 @@
 #include "hair_detection_main.h"
 #include "hair_inpainting_GPU.cuh"
+#include "hair_inpainting_CPU.h"
 
 
 bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
@@ -20,9 +21,8 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
 #endif
 
     cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U, cv::Scalar(0));
-    uchar* d_src = nullptr;
     if (isGPU) {
-        getHairMaskGPU(src, mask, d_src, para);
+        getHairMaskGPU(src, mask, para);
     }
     else {
         getHairMaskCPU(src, mask, para);
@@ -43,7 +43,7 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     auto t6 = std::chrono::system_clock::now();
 #endif
 
-    cleanIsolatedComponent(mask, para);
+    //cleanIsolatedComponent(mask, para);
 
 #if TIMER
     auto t7 = std::chrono::system_clock::now();
@@ -57,8 +57,8 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
         src.rows,
         src.channels(),
         2);
-    hairInpainting(src, mask, d_src, removed_dst, hair_inpainting_info);
-
+    hairInpaintingGPU(src, mask, removed_dst, hair_inpainting_info);
+    //hairInpaintingCPU(src, mask, removed_dst, hair_inpainting_info);
     dst = removed_dst;
 
 #if TIMER

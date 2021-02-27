@@ -5,128 +5,10 @@
 __constant__ float dt[1];
 __constant__ float center_w[1];
 
-void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float* dstMask, float* dstMaskImage) {
-	const int width = srcImage.cols;
-	const int height = srcImage.rows;
-	uchar* src_image_ptr = srcImage.data;
-	uchar* src_mask_ptr = srcMask.data;
-	for (int i = 0; i < height * width; i++) {
-		dstMask[i] = src_mask_ptr[i] != 0 ? 0.0f : 1.0f;
-	}
-	int max_r = 0;
-	int max_g = 0;
-	int max_b = 0;
-	int min_r = 255;
-	int min_g = 255;
-	int min_b = 255;
-	int pixel = 0;
-	int range_r, range_g, range_b;
-	int i = 0;
-	int _i = 0;
-	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
-			i = y * (width * 3) + (x * 3);
-			pixel = src_image_ptr[i];
-			if (pixel > max_r) max_r = pixel;
-			if (pixel < min_r) min_r = pixel;
-			pixel = src_image_ptr[i + 1];
-			if (pixel > max_g) max_g = pixel;
-			if (pixel < min_g) min_g = pixel;
-			pixel = src_image_ptr[i + 2];
-			if (pixel > max_b) max_b = pixel;
-			if (pixel < min_b) min_b = pixel;
-		}
-	}
-	range_r = max_r - min_r;
-	range_g = max_g - min_g;
-	range_b = max_b - min_b;
-	for (int y = 0; y < height; y++) {
-		for (int x = 0; x < width; x++) {
-			i = y * (width * 3) + (x * 3);
-			_i = y * width + x;
-			float r = ((float)src_image_ptr[i] - min_r) / range_r;
-			float g = ((float)src_image_ptr[i + 1] - min_g) / range_g;
-			float b = ((float)src_image_ptr[i + 2] - min_b) / range_b;
-			dstImage[i] = r;
-			dstImage[i+1] = g;
-			dstImage[i+2] = b;
-			dstMaskImage[i] = dstMask[_i] > 0.0f ? r : 1.0f;
-			dstMaskImage[i + 1] = dstMask[_i] > 0.0f ? g : 1.0f;
-			dstMaskImage[i + 2] = dstMask[_i] > 0.0f ? b : 1.0f;
-		}
-	}
-}
-
-void hairInpainting(cv::Mat& src, cv::Mat& mask, uchar* dSrc, cv::Mat& dst, HairInpaintInfo info) {
-	cv::resize(src, src, cv::Size(info.Width, info.Height));
-	cv::resize(mask, mask, cv::Size(info.Width, info.Height));
-
-#if DEBUG
-	uchar* h_src = (uchar*)malloc(info.NumberOfC3Elements * sizeof(uchar));
-	gpuErrorCheck(cudaMemcpy(h_src, dSrc, info.NumberOfC3Elements * sizeof(uchar), cudaMemcpyDeviceToHost));
-	cv::Mat plot_src(info.Height, info.Width, CV_8UC3, h_src);
-	displayImage(plot_src, "d_src", true);
-#endif
-	float* normalized_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	float* normalized_mask = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
-	float* normalized_masked_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src);
-
-#if DEBUG
-	cv::Mat plot_normalized_src(info.Height, info.Width, CV_32FC3, normalized_src);
-	cv::Mat plot_normalized_mask(info.Height, info.Width, CV_32FC1, normalized_mask);
-	cv::Mat plot_normalized_masked_src(info.Height, info.Width, CV_32FC3, normalized_masked_src);
-	displayImage(plot_normalized_src, "normalized_src", true);
-	displayImage(plot_normalized_mask, "normalized_mask", true);
-	displayImage(plot_normalized_masked_src, "normalized_masked_src", true);
-#endif
-
-	float* d_normalized_mask;
-	float* d_normalized_masked_src;
-	float* d_normalized_masked_src_updated;
-	float* d_normalized_masked_src_temp;
-	gpuErrorCheck(cudaMalloc((float**)&d_normalized_mask, info.NumberOfC1Elements * sizeof(float)));
-	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float)));
-	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_updated, info.NumberOfC3Elements * sizeof(float)));
-	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float)));
-	gpuErrorCheck(cudaMemcpy(d_normalized_mask, normalized_mask, info.NumberOfC1Elements * sizeof(float), cudaMemcpyHostToDevice));
-	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src, normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyHostToDevice));
-
-	const int smem_size = DATA_TILE_DIM * DATA_TILE_DIM * info.Channels * sizeof(float);
-	dim3 block(TILE_DIM, TILE_DIM);
-	dim3 grid(iDivUp(info.Width, TILE_DIM), iDivUp(info.Height, TILE_DIM));
-	
-	const float h_const_dt = 0.2f;
-	const float h_center_w = 4.0f;
-	gpuErrorCheck(cudaMemcpyToSymbol(dt, &h_const_dt, 1 * sizeof(float)));
-	gpuErrorCheck(cudaMemcpyToSymbol(center_w, &h_center_w, 1 * sizeof(float)));
-	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice));
-
-	for (int i = 0; i < 500; i++) {
-		PDEInpainting << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
-		gpuErrorCheck(cudaDeviceSynchronize());
-	}
-
-#if DEBUG
-	float* h_result = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	gpuErrorCheck(cudaMemcpy(h_result, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
-	cv::Mat plot_src(info.Height, info.Width, CV_32FC3, h_result);
-	cv::resize(plot_src, plot_src, cv::Size(info.Width * info.Rescale, info.Height * info.Rescale));
-	displayImage(plot_src, "h_result", true);
-#endif
-
-	float* h_result = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	gpuErrorCheck(cudaMemcpy(h_result, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
-	cv::Mat dst_mat(info.Height, info.Width, CV_32FC3, h_result);
-	dst = dst_mat;
-	gpuErrorCheck(cudaDeviceReset());
-}
-
-__global__ void PDEInpaintingSMEM(float* mask, float* src, float* tempSrc, int width, int height) {
+__global__ void PDEHeatDiffusionSMEM(float* mask, float* src, float* tempSrc, int width, int height) {
 	__shared__ float smem[DATA_TILE_DIM][DATA_TILE_DIM][3];
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	//if (x < 1 || y < 1 || x >= width -1 || y >= height - 1) return;
 	if (x >= width || y >= height) return;
 	int c1i = y * width + x;
 	int c3i = y * (width * 3) + (x * 3);
@@ -179,7 +61,7 @@ __global__ void PDEInpaintingSMEM(float* mask, float* src, float* tempSrc, int w
 		- dt[0] * mask_center * (center - src[c3i + 2]);
 }
 
-__global__ void PDEInpainting(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
+__global__ void PDEHeatDiffusion(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
 	int x = threadIdx.x + blockDim.x * blockIdx.x;
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 	if (x < 1 || y < 1 || x >= width -1 || y >= height - 1) return;
@@ -197,4 +79,75 @@ __global__ void PDEInpainting(float* mask, float* src, float* tempSrc, int width
 				- center_w[0] * center)
 			- dt[0] * mask_center * (center - src[c3i+k]);
 	}
+}
+
+void hairInpaintingGPU(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo info) {
+	cv::resize(src, src, cv::Size(info.Width, info.Height));
+	cv::resize(mask, mask, cv::Size(info.Width, info.Height));
+
+#if DEBUG
+	uchar* h_src = (uchar*)malloc(info.NumberOfC3Elements * sizeof(uchar));
+	gpuErrorCheck(cudaMemcpy(h_src, dSrc, info.NumberOfC3Elements * sizeof(uchar), cudaMemcpyDeviceToHost));
+	cv::Mat plot_src(info.Height, info.Width, CV_8UC3, h_src);
+	displayImage(plot_src, "d_src", true);
+#endif
+	float* normalized_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
+	float* normalized_mask = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
+	float* normalized_masked_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
+	normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src, false);
+
+#if DEBUG
+	cv::Mat plot_normalized_src(info.Height, info.Width, CV_32FC3, normalized_src);
+	cv::Mat plot_normalized_mask(info.Height, info.Width, CV_32FC1, normalized_mask);
+	cv::Mat plot_normalized_masked_src(info.Height, info.Width, CV_32FC3, normalized_masked_src);
+	displayImage(plot_normalized_src, "normalized_src", true);
+	displayImage(plot_normalized_mask, "normalized_mask", true);
+	displayImage(plot_normalized_masked_src, "normalized_masked_src", true);
+#endif
+
+	float* d_normalized_mask;
+	float* d_normalized_masked_src;
+	float* d_normalized_masked_src_updated;
+	float* d_normalized_masked_src_temp;
+	gpuErrorCheck(cudaMalloc((float**)&d_normalized_mask, info.NumberOfC1Elements * sizeof(float)));
+	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float)));
+	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_updated, info.NumberOfC3Elements * sizeof(float)));
+	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float)));
+	gpuErrorCheck(cudaMemcpy(d_normalized_mask, normalized_mask, info.NumberOfC1Elements * sizeof(float), cudaMemcpyHostToDevice));
+	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src, normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyHostToDevice));
+
+	const int smem_size = DATA_TILE_DIM * DATA_TILE_DIM * info.Channels * sizeof(float);
+	dim3 block(TILE_DIM, TILE_DIM);
+	dim3 grid(iDivUp(info.Width, TILE_DIM), iDivUp(info.Height, TILE_DIM));
+
+	const float h_const_dt = 0.1f;
+	const float h_center_w = 4.0f;
+	gpuErrorCheck(cudaMemcpyToSymbol(dt, &h_const_dt, 1 * sizeof(float)));
+	gpuErrorCheck(cudaMemcpyToSymbol(center_w, &h_center_w, 1 * sizeof(float)));
+	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice));
+
+	for (int i = 0; i < info.Iters; i++) {
+		PDEHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
+		gpuErrorCheck(cudaDeviceSynchronize());
+	}
+
+#if DEBUG
+	float* h_result = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
+	gpuErrorCheck(cudaMemcpy(h_result, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
+	cv::Mat plot_src(info.Height, info.Width, CV_32FC3, h_result);
+	cv::resize(plot_src, plot_src, cv::Size(info.Width * info.Rescale, info.Height * info.Rescale));
+	displayImage(plot_src, "h_result", true);
+#endif
+
+	float* h_result = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
+	gpuErrorCheck(cudaMemcpy(h_result, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
+	cv::Mat dst_mat(info.Height, info.Width, CV_32FC3, h_result);
+	cv::resize(dst_mat, dst_mat, cv::Size(info.Width * info.Rescale, info.Height * info.Rescale));
+	dst = dst_mat;
+	gpuErrorCheck(cudaDeviceReset());
+}
+
+// main
+void hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo info) {
+
 }

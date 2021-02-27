@@ -45,3 +45,24 @@ public:
 		kernelY = kernelRadius;
 	}
 };
+
+class HairInpaintInfo {
+public:
+	int Width;
+	int Height;
+	int Channels;
+	int Rescale;
+	int NumberOfC1Elements;
+	int NumberOfC3Elements;
+	int Iters;
+
+	HairInpaintInfo(int width, int height, int channels, int rescale) {
+		Width = width / rescale;
+		Height = height / rescale;
+		Channels = channels;
+		Rescale = rescale;
+		Iters = 500;
+		NumberOfC1Elements = width * height / rescale / rescale;
+		NumberOfC3Elements = width * height * channels / rescale / rescale;
+	}
+};
