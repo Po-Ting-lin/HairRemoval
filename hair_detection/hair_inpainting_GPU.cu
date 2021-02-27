@@ -164,16 +164,25 @@ void hairInpaintingMix(float* normalized_mask, float* normalized_masked_src, flo
 	gpuErrorCheck(cudaMemcpyToSymbol(d_center_w, &h_center_w, 1 * sizeof(float)));
 	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC2Elements * sizeof(float), cudaMemcpyDeviceToDevice));
 
-	int init_iters = 700;
-	PDEHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.MixGpuChannels, init_iters);
-	
-	// CPU
-	int mix_cpu_channels = info.Channels - info.MixGpuChannels;
-	int normalized_masked_src_offset = info.MixGpuChannels * info.Width * info.Height;
+	bool first_process = true;
+	bool* is_finish_process = new bool[1]{false};
 	float* img_u = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
-	memcpy(img_u, &normalized_masked_src[normalized_masked_src_offset], info.NumberOfC1Elements * sizeof(float));
-	PDEHeatDiffusionCPU(normalized_mask, &normalized_masked_src[normalized_masked_src_offset], img_u, mix_cpu_channels, info);
-	//
+	std::unique_ptr<std::thread> thread_ptr;
+	for (int i = 0; i < info.Iters; i++) {
+		PDEHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.MixGpuChannels);
+		
+		// CPU
+		if (first_process) {
+			thread_ptr = std::unique_ptr<std::thread>(new std::thread(hairInpaintingAsync, normalized_mask, normalized_masked_src, img_u, info, is_finish_process));
+			first_process = false;
+		}
+	}	
+	while (true) {
+		if (is_finish_process[0]) {
+			thread_ptr->join();
+			break;
+		}
+	}
 	gpuErrorCheck(cudaDeviceSynchronize());
 
 
@@ -181,13 +190,22 @@ void hairInpaintingMix(float* normalized_mask, float* normalized_masked_src, flo
 	// R G channels
 	gpuErrorCheck(cudaMemcpy(h_result, d_normalized_masked_src_temp, info.NumberOfC2Elements * sizeof(float), cudaMemcpyDeviceToHost));
 	// B channels
-	memcpy(&h_result[normalized_masked_src_offset], img_u, info.NumberOfC1Elements * sizeof(float));
+	memcpy(&h_result[info.MixGpuChannels * info.Width * info.Height], img_u, info.NumberOfC1Elements * sizeof(float));
 	dst = h_result;
 
 	gpuErrorCheck(cudaFree(d_normalized_mask));
 	gpuErrorCheck(cudaFree(d_normalized_masked_src));
 	gpuErrorCheck(cudaFree(d_normalized_masked_src_temp));
 	gpuErrorCheck(cudaDeviceReset());
+}
+
+void hairInpaintingAsync(float* normalized_mask, float* normalized_masked_src, float* dst, HairInpaintInfo info, bool* isFinish) {
+	int mix_cpu_channels = info.Channels - info.MixGpuChannels;
+	int normalized_masked_src_offset = info.MixGpuChannels * info.Width * info.Height;
+	memcpy(dst, &normalized_masked_src[normalized_masked_src_offset], info.NumberOfC1Elements * sizeof(float));
+	PDEHeatDiffusionCPU(normalized_mask, &normalized_masked_src[normalized_masked_src_offset], dst, mix_cpu_channels, info);
+	std::cout << "finish the cpu process" << std::endl;
+	isFinish[0] = true;
 }
 
 // main
@@ -203,8 +221,8 @@ void hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo i
 	float* h_dst_array = nullptr; // 3 channels
 	float* h_result_temp = (float*)malloc(info.NumberOfC3Elements * sizeof(float));;
 	if (true) {
-		//hairInpaintingGPU(normalized_mask, normalized_masked_src, h_dst_array, info);
-		hairInpaintingMix(normalized_mask, normalized_masked_src, h_dst_array, info);
+		hairInpaintingGPU(normalized_mask, normalized_masked_src, h_dst_array, info);
+		//hairInpaintingMix(normalized_mask, normalized_masked_src, h_dst_array, info);
 	}
 	else{
 		hairInpaintingCPU(normalized_mask, normalized_masked_src, h_dst_array, info);

@@ -1,4 +1,5 @@
 #pragma once
+#include <thread>
 #include "utils.h"
 #include "parameters.h"
 #include "cuda_error.cuh"
@@ -11,3 +12,4 @@ __global__ void PDEHeatDiffusionSMEM(float* mask, float* src, float* tempSrc, in
 
 void hairInpaintingGPU(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info);
 void hairInpaintingMix(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info);
+void hairInpaintingAsync(float* normalized_mask, float* normalized_masked_src, float* dst, HairInpaintInfo info, bool* isFinish);
