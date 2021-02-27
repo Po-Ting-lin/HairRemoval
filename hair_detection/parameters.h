@@ -51,18 +51,26 @@ public:
 	int Width;
 	int Height;
 	int Channels;
+	int MixGpuChannels;
 	int Rescale;
 	int NumberOfC1Elements;
 	int NumberOfC3Elements;
+	int NumberOfC2Elements;
 	int Iters;
+	float Dt;
+	float Cw;
 
 	HairInpaintInfo(int width, int height, int channels, int rescale) {
 		Width = width / rescale;
 		Height = height / rescale;
 		Channels = channels;
+		MixGpuChannels = 2;
 		Rescale = rescale;
 		Iters = 500;
+		Dt = 0.1f;
+		Cw = 4.0f;
 		NumberOfC1Elements = width * height / rescale / rescale;
+		NumberOfC2Elements = width * height * 2 / rescale / rescale;
 		NumberOfC3Elements = width * height * channels / rescale / rescale;
 	}
 };

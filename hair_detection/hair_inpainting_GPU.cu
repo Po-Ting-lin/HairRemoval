@@ -2,8 +2,8 @@
 
 #define DATA_TILE_DIM 34
 
-__constant__ float dt[1];
-__constant__ float center_w[1];
+__constant__ float d_dt[1];
+__constant__ float d_center_w[1];
 
 __global__ void PDEHeatDiffusionSMEM(float* mask, float* src, float* tempSrc, int width, int height) {
 	__shared__ float smem[DATA_TILE_DIM][DATA_TILE_DIM][3];
@@ -47,18 +47,18 @@ __global__ void PDEHeatDiffusionSMEM(float* mask, float* src, float* tempSrc, in
 	float center = smem[threadIdx.y + 1][threadIdx.x + 1][0];
 	float mask_center = mask[c1i];
 	tempSrc[c3i] = center
-		+ dt[0] * (smem[threadIdx.y][threadIdx.x + 1][0] + smem[threadIdx.y + 2][threadIdx.x + 1][0] + smem[threadIdx.y + 1][threadIdx.x][0] + smem[threadIdx.y + 1][threadIdx.x + 2][0] - center_w[0] * center)
-		- dt[0] * mask_center * (center - src[c3i]);
+		+ d_dt[0] * (smem[threadIdx.y][threadIdx.x + 1][0] + smem[threadIdx.y + 2][threadIdx.x + 1][0] + smem[threadIdx.y + 1][threadIdx.x][0] + smem[threadIdx.y + 1][threadIdx.x + 2][0] - d_center_w[0] * center)
+		- d_dt[0] * mask_center * (center - src[c3i]);
 
 	center = smem[threadIdx.y + 1][threadIdx.x + 1][1];
 	tempSrc[c3i + 1] = center
-		+ dt[0] * (smem[threadIdx.y][threadIdx.x + 1][1] + smem[threadIdx.y + 2][threadIdx.x + 1][1] + smem[threadIdx.y + 1][threadIdx.x][1] + smem[threadIdx.y + 1][threadIdx.x + 2][1] - center_w[0] * center)
-		- dt[0] * mask_center * (center - src[c3i + 1]);
+		+ d_dt[0] * (smem[threadIdx.y][threadIdx.x + 1][1] + smem[threadIdx.y + 2][threadIdx.x + 1][1] + smem[threadIdx.y + 1][threadIdx.x][1] + smem[threadIdx.y + 1][threadIdx.x + 2][1] - d_center_w[0] * center)
+		- d_dt[0] * mask_center * (center - src[c3i + 1]);
 
 	center = smem[threadIdx.y + 1][threadIdx.x + 1][2];
 	tempSrc[c3i + 2] = center
-		+ dt[0] * (smem[threadIdx.y][threadIdx.x + 1][2] + smem[threadIdx.y + 2][threadIdx.x + 1][2] + smem[threadIdx.y + 1][threadIdx.x][2] + smem[threadIdx.y + 1][threadIdx.x + 2][2] - center_w[0] * center)
-		- dt[0] * mask_center * (center - src[c3i + 2]);
+		+ d_dt[0] * (smem[threadIdx.y][threadIdx.x + 1][2] + smem[threadIdx.y + 2][threadIdx.x + 1][2] + smem[threadIdx.y + 1][threadIdx.x][2] + smem[threadIdx.y + 1][threadIdx.x + 2][2] - d_center_w[0] * center)
+		- d_dt[0] * mask_center * (center - src[c3i + 2]);
 }
 
 __global__ void PDEHeatDiffusion(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
@@ -66,52 +66,55 @@ __global__ void PDEHeatDiffusion(float* mask, float* src, float* tempSrc, int wi
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 	if (x < 1 || y < 1 || x >= width -1 || y >= height - 1) return;
 	float center;
-	int c3i = y * (width * ch) + (x * ch);
+	int c3i = 0;
+	int ch_offset = 0;
 	float mask_center = mask[y * width + x];
 
 	for (int k = 0; k < ch; k++) {
-		center = tempSrc[c3i+k];
-		tempSrc[c3i+k] = center
-			+ dt[0] * (tempSrc[(y - 1) * (width * ch) + (x * ch) + k]
-				+ tempSrc[(y + 1) * (width * ch) + (x * ch) + k]
-				+ tempSrc[y * (width * ch) + ((x - 1) * ch) + k]
-				+ tempSrc[y * (width * ch) + ((x + 1) * ch) + k]
-				- center_w[0] * center)
-			- dt[0] * mask_center * (center - src[c3i+k]);
+		ch_offset = k * width * height;
+		c3i = ch_offset + y * width + x;
+		center = tempSrc[c3i];
+		tempSrc[c3i] = center
+			+ d_dt[0] * (tempSrc[ch_offset + (y - 1) * width + x]
+				+ tempSrc[ch_offset + (y + 1) * width + x]
+				+ tempSrc[ch_offset + y * width + (x - 1)]
+				+ tempSrc[ch_offset + y * width + (x + 1)]
+				- d_center_w[0] * center)
+			- d_dt[0] * mask_center * (center - src[c3i]);
 	}
 }
 
-void hairInpaintingGPU(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo info) {
-	cv::resize(src, src, cv::Size(info.Width, info.Height));
-	cv::resize(mask, mask, cv::Size(info.Width, info.Height));
+__global__ void PDEHeatDiffusion(float* mask, float* src, float* tempSrc, int width, int height, int ch, int iters) {
+	int x = threadIdx.x + blockDim.x * blockIdx.x;
+	int y = threadIdx.y + blockDim.y * blockIdx.y;
+	if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return;
+	float center;
+	int c3i = 0;
+	int ch_offset = 0;
+	float mask_center = mask[y * width + x];
 
-#if DEBUG
-	uchar* h_src = (uchar*)malloc(info.NumberOfC3Elements * sizeof(uchar));
-	gpuErrorCheck(cudaMemcpy(h_src, dSrc, info.NumberOfC3Elements * sizeof(uchar), cudaMemcpyDeviceToHost));
-	cv::Mat plot_src(info.Height, info.Width, CV_8UC3, h_src);
-	displayImage(plot_src, "d_src", true);
-#endif
-	float* normalized_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	float* normalized_mask = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
-	float* normalized_masked_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src, false);
+	for (int i = 0; i < iters; i++) {
+		for (int k = 0; k < ch; k++) {
+			ch_offset = k * width * height;
+			c3i = ch_offset + y * width + x;
+			center = tempSrc[c3i];
+			tempSrc[c3i] = center
+				+ d_dt[0] * (tempSrc[ch_offset + (y - 1) * width + x]
+					+ tempSrc[ch_offset + (y + 1) * width + x]
+					+ tempSrc[ch_offset + y * width + (x - 1)]
+					+ tempSrc[ch_offset + y * width + (x + 1)]
+					- d_center_w[0] * center)
+				- d_dt[0] * mask_center * (center - src[c3i]);
+		}
+	}
+}
 
-#if DEBUG
-	cv::Mat plot_normalized_src(info.Height, info.Width, CV_32FC3, normalized_src);
-	cv::Mat plot_normalized_mask(info.Height, info.Width, CV_32FC1, normalized_mask);
-	cv::Mat plot_normalized_masked_src(info.Height, info.Width, CV_32FC3, normalized_masked_src);
-	displayImage(plot_normalized_src, "normalized_src", true);
-	displayImage(plot_normalized_mask, "normalized_mask", true);
-	displayImage(plot_normalized_masked_src, "normalized_masked_src", true);
-#endif
-
+void hairInpaintingGPU(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info) {
 	float* d_normalized_mask;
 	float* d_normalized_masked_src;
-	float* d_normalized_masked_src_updated;
 	float* d_normalized_masked_src_temp;
 	gpuErrorCheck(cudaMalloc((float**)&d_normalized_mask, info.NumberOfC1Elements * sizeof(float)));
 	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float)));
-	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_updated, info.NumberOfC3Elements * sizeof(float)));
 	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float)));
 	gpuErrorCheck(cudaMemcpy(d_normalized_mask, normalized_mask, info.NumberOfC1Elements * sizeof(float), cudaMemcpyHostToDevice));
 	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src, normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyHostToDevice));
@@ -122,32 +125,99 @@ void hairInpaintingGPU(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInf
 
 	const float h_const_dt = 0.1f;
 	const float h_center_w = 4.0f;
-	gpuErrorCheck(cudaMemcpyToSymbol(dt, &h_const_dt, 1 * sizeof(float)));
-	gpuErrorCheck(cudaMemcpyToSymbol(center_w, &h_center_w, 1 * sizeof(float)));
+	gpuErrorCheck(cudaMemcpyToSymbol(d_dt, &h_const_dt, 1 * sizeof(float)));
+	gpuErrorCheck(cudaMemcpyToSymbol(d_center_w, &h_center_w, 1 * sizeof(float)));
 	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice));
 
-	for (int i = 0; i < info.Iters; i++) {
+	for (int i = 0; i < 1000; i++) {
 		PDEHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
-		gpuErrorCheck(cudaDeviceSynchronize());
 	}
-
-#if DEBUG
+	gpuErrorCheck(cudaDeviceSynchronize());
+	
 	float* h_result = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
 	gpuErrorCheck(cudaMemcpy(h_result, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
-	cv::Mat plot_src(info.Height, info.Width, CV_32FC3, h_result);
-	cv::resize(plot_src, plot_src, cv::Size(info.Width * info.Rescale, info.Height * info.Rescale));
-	displayImage(plot_src, "h_result", true);
-#endif
+	dst = h_result;
+
+	gpuErrorCheck(cudaFree(d_normalized_mask));
+	gpuErrorCheck(cudaFree(d_normalized_masked_src));
+	gpuErrorCheck(cudaFree(d_normalized_masked_src_temp));
+	gpuErrorCheck(cudaDeviceReset());
+}
+
+void hairInpaintingMix(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info) {
+	float* d_normalized_mask;
+	float* d_normalized_masked_src;
+	float* d_normalized_masked_src_temp;
+	gpuErrorCheck(cudaMalloc((float**)&d_normalized_mask, info.NumberOfC1Elements * sizeof(float)));
+	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src, info.NumberOfC2Elements * sizeof(float)));
+	gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_temp, info.NumberOfC2Elements * sizeof(float)));
+	gpuErrorCheck(cudaMemcpy(d_normalized_mask, normalized_mask, info.NumberOfC1Elements * sizeof(float), cudaMemcpyHostToDevice));
+	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src, normalized_masked_src, info.NumberOfC2Elements * sizeof(float), cudaMemcpyHostToDevice));
+
+	const int smem_size = DATA_TILE_DIM * DATA_TILE_DIM * info.MixGpuChannels * sizeof(float);
+	dim3 block(TILE_DIM, TILE_DIM);
+	dim3 grid(iDivUp(info.Width, TILE_DIM), iDivUp(info.Height, TILE_DIM));
+
+	const float h_const_dt = info.Dt;
+	const float h_center_w = info.Cw;
+	gpuErrorCheck(cudaMemcpyToSymbol(d_dt, &h_const_dt, 1 * sizeof(float)));
+	gpuErrorCheck(cudaMemcpyToSymbol(d_center_w, &h_center_w, 1 * sizeof(float)));
+	gpuErrorCheck(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC2Elements * sizeof(float), cudaMemcpyDeviceToDevice));
+
+	int init_iters = 700;
+	PDEHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.MixGpuChannels, init_iters);
+	
+	// CPU
+	int mix_cpu_channels = info.Channels - info.MixGpuChannels;
+	int normalized_masked_src_offset = info.MixGpuChannels * info.Width * info.Height;
+	float* img_u = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
+	memcpy(img_u, &normalized_masked_src[normalized_masked_src_offset], info.NumberOfC1Elements * sizeof(float));
+	PDEHeatDiffusionCPU(normalized_mask, &normalized_masked_src[normalized_masked_src_offset], img_u, mix_cpu_channels, info);
+	//
+	gpuErrorCheck(cudaDeviceSynchronize());
+
 
 	float* h_result = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	gpuErrorCheck(cudaMemcpy(h_result, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
-	cv::Mat dst_mat(info.Height, info.Width, CV_32FC3, h_result);
-	cv::resize(dst_mat, dst_mat, cv::Size(info.Width * info.Rescale, info.Height * info.Rescale));
-	dst = dst_mat;
+	// R G channels
+	gpuErrorCheck(cudaMemcpy(h_result, d_normalized_masked_src_temp, info.NumberOfC2Elements * sizeof(float), cudaMemcpyDeviceToHost));
+	// B channels
+	memcpy(&h_result[normalized_masked_src_offset], img_u, info.NumberOfC1Elements * sizeof(float));
+	dst = h_result;
+
+	gpuErrorCheck(cudaFree(d_normalized_mask));
+	gpuErrorCheck(cudaFree(d_normalized_masked_src));
+	gpuErrorCheck(cudaFree(d_normalized_masked_src_temp));
 	gpuErrorCheck(cudaDeviceReset());
 }
 
 // main
-void hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo info) {
+void hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo info, bool isGPU) {
+	cv::resize(src, src, cv::Size(info.Width, info.Height));
+	cv::resize(mask, mask, cv::Size(info.Width, info.Height));
 
+	float* normalized_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
+	float* normalized_mask = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
+	float* normalized_masked_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
+	normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src, true);
+
+	float* h_dst_array = nullptr; // 3 channels
+	float* h_result_temp = (float*)malloc(info.NumberOfC3Elements * sizeof(float));;
+	if (true) {
+		//hairInpaintingGPU(normalized_mask, normalized_masked_src, h_dst_array, info);
+		hairInpaintingMix(normalized_mask, normalized_masked_src, h_dst_array, info);
+	}
+	else{
+		hairInpaintingCPU(normalized_mask, normalized_masked_src, h_dst_array, info);
+	}
+
+	memcpy(h_result_temp, h_dst_array, info.NumberOfC3Elements * sizeof(float));
+	convertToMatArrayFormat(h_result_temp, h_dst_array, info);
+	cv::Mat dst_mat(info.Height, info.Width, CV_32FC3, h_dst_array);
+	cv::resize(dst_mat, dst_mat, cv::Size(info.Width * info.Rescale, info.Height * info.Rescale));
+	dst = dst_mat;
+
+	free(h_result_temp);
+	free(normalized_src);
+	free(normalized_mask);
+	free(normalized_masked_src);
 }

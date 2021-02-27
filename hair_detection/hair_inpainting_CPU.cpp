@@ -73,11 +73,10 @@ void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float*
 	}
 }
 
-void mergeChannels(float* srcImage, float* dstImage, HairInpaintInfo info) {
+void convertToMatArrayFormat(float* srcImage, float* dstImage, HairInpaintInfo info) {
 	int srcI = 0;
 	int dstI = 0;
-	float temp = 0;
-	for (int k = 0; k < 3; k++) {
+	for (int k = 0; k < info.Channels; k++) {
 		int channel_offset = k * info.Width * info.Height;
 		for (int y = 0; y < info.Height; y++) {
 			for (int x = 0; x < info.Width; x++) {
@@ -89,25 +88,17 @@ void mergeChannels(float* srcImage, float* dstImage, HairInpaintInfo info) {
 	}
 }
 
-void hairInpaintingCPU(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo info) {
-	cv::resize(src, src, cv::Size(info.Width, info.Height));
-	cv::resize(mask, mask, cv::Size(info.Width, info.Height));
-	
-	float* normalized_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	float* normalized_mask = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
-	float* normalized_masked_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
+void hairInpaintingCPU(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info) {
 	float* img_u = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	float* img_u_temp = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src, true);
 	memcpy(img_u, normalized_masked_src, info.NumberOfC3Elements * sizeof(float));
-	memcpy(img_u_temp, normalized_masked_src, info.NumberOfC3Elements * sizeof(float));
+	PDEHeatDiffusionCPU(normalized_mask, normalized_masked_src, img_u, info.Channels, info);
+	dst = img_u;
+}
 
-	const float dt = 0.1f;
-	const float cw = 4.0f;
+void PDEHeatDiffusionCPU(float* normalized_mask, float* normalized_masked_src, float* dst, int ch, HairInpaintInfo info) {
 	int x_boundary = info.Width - 1;
-
-	for (int i = 0; i < 500; i++) {
-		for (int k = 0; k < info.Channels; k++) {
+	for (int i = 0; i < info.Iters; i++) {
+		for (int k = 0; k < ch; k++) {
 			int channel_offset = k * info.Width * info.Height;
 #pragma omp parallel for
 			for (int y = 1; y < info.Height - 1; y++) {
@@ -118,8 +109,8 @@ void hairInpaintingCPU(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInf
 				__m256 _mC = SET8F(0.0f);
 				__m256 _eA = SET8F(0.0f);
 				__m256 _eC = SET8F(0.0f);
-				__m256 _dt = SET8F(dt);
-				__m256 _cw = SET8F(cw);
+				__m256 _dt = SET8F(info.Dt);
+				__m256 _cw = SET8F(info.Cw);
 				__m256 _x;
 				__m256 _c, _u, _d, _l, _r, _mc, _oc;
 				__m256i _x_mask;
@@ -141,14 +132,14 @@ void hairInpaintingCPU(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInf
 					_r = SET8F(0.0f);
 					_mc = SET8F(0.0f);
 					_oc = SET8F(0.0f);
-					_c = MASKLOAD(&img_u[c3i], _x_mask);
-					_u = MASKLOAD(&img_u[c3ui], _x_mask);
-					_d = MASKLOAD(&img_u[c3di], _x_mask);
-					_l = MASKLOAD(&img_u[c3li], _x_mask);
-					_r = MASKLOAD(&img_u[c3ri], _x_mask);
+					_c = MASKLOAD(&dst[c3i], _x_mask);
+					_u = MASKLOAD(&dst[c3ui], _x_mask);
+					_d = MASKLOAD(&dst[c3di], _x_mask);
+					_l = MASKLOAD(&dst[c3li], _x_mask);
+					_r = MASKLOAD(&dst[c3ri], _x_mask);
 					_mc = MASKLOAD(&normalized_mask[c1i], _x_mask);
 					_oc = MASKLOAD(&normalized_masked_src[c3i], _x_mask);
-					MASKSTORE(&img_u[c3i]
+					MASKSTORE(&dst[c3i]
 						, _x_mask
 						, SUB8F(ADD8F(_c, MUL8F(_dt, SUB8F(ADD8F(_u, ADD8F(_d, ADD8F(_l, _r))), MUL8F(_cw, _c)))), MUL8F(_dt, MUL8F(_mc, SUB8F(_c, _oc)))));
 				}
@@ -161,17 +152,12 @@ void hairInpaintingCPU(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInf
 					int c3li = channel_offset + y * info.Width + (x - 1);
 					int c3ri = channel_offset + y * info.Width + (x + 1);
 
-					img_u[c3i] = img_u[c3i]
-						+ dt * (img_u[c3ui] + img_u[c3di] + img_u[c3li] + img_u[c3ri] - 4.0f * img_u[c3i])
-						- dt * normalized_mask[c1i] * (img_u[c3i] - normalized_masked_src[c3i]);
+					dst[c3i] = dst[c3i]
+						+ info.Dt * (dst[c3ui] + dst[c3di] + dst[c3li] + dst[c3ri] - info.Cw * dst[c3i])
+						- info.Dt * normalized_mask[c1i] * (dst[c3i] - normalized_masked_src[c3i]);
 				}
 #endif
 			}
 		}
 	}
-	memcpy(img_u_temp, img_u, info.NumberOfC3Elements * sizeof(float));
-	mergeChannels(img_u_temp, img_u, info);
-	cv::Mat dst_mat(info.Height, info.Width, CV_32FC3, img_u);
-	cv::resize(dst_mat, dst_mat, cv::Size(info.Width * info.Rescale, info.Height * info.Rescale));
-	dst = dst_mat;
 }

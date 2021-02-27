@@ -57,8 +57,7 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
         src.rows,
         src.channels(),
         2);
-    hairInpaintingGPU(src, mask, removed_dst, hair_inpainting_info);
-    //hairInpaintingCPU(src, mask, removed_dst, hair_inpainting_info);
+    hairInpainting(src, mask, removed_dst, hair_inpainting_info, true);
     dst = removed_dst;
 
 #if TIMER
