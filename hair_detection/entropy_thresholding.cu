@@ -155,8 +155,8 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
 
     int dynamic_range = 256;
 
-#if TIMER
-    auto t1 = std::chrono::system_clock::now();
+#if L2_TIMER
+    auto t1 = getTime();
 #endif
 
     // host 
@@ -170,8 +170,8 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
         h_reversed_data[j] = h_data[i];
     }
 
-#if TIMER
-    auto t2 = std::chrono::system_clock::now();
+#if L2_TIMER
+    auto t2 = getTime();
 #endif
 
     // device
@@ -185,8 +185,8 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     gpuErrorCheck(cudaMalloc((void**)&d_eC, dynamic_range * sizeof(float)));
     gpuErrorCheck(cudaMemcpy(d_data, h_data, dynamic_range * dynamic_range * sizeof(float), cudaMemcpyHostToDevice));
 
-#if TIMER
-    auto t3 = std::chrono::system_clock::now();
+#if L2_TIMER
+    auto t3 = getTime();
 #endif
 
     cudaStream_t stream[E_NUM_STREAMS];
@@ -197,8 +197,8 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     entropyCPU(h_data, h_eA, dynamic_range, false);
     entropyCPU(h_reversed_data, h_eC, dynamic_range, true);
 
-#if TIMER
-    auto t35 = std::chrono::system_clock::now();
+#if L2_TIMER
+    auto t35 = getTime();
 #endif
 
     EntropyThresholdDeviceInfo info(dynamic_range);
@@ -218,15 +218,15 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
         cudaStreamDestroy(stream[i]);
     }
 
-#if TIMER
-    auto t4 = std::chrono::system_clock::now();
+#if L2_TIMER
+    auto t4 = getTime();
 #endif
 
     gpuErrorCheck(cudaMemcpy(h_eA, d_eA, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
     gpuErrorCheck(cudaMemcpy(h_eC, d_eC, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
 
-#if TIMER
-    auto t5 = std::chrono::system_clock::now();
+#if L2_TIMER
+    auto t5 = getTime();
 #endif
 
     float min_value = FLT_MAX;
@@ -240,8 +240,8 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
         }
     }
 
-#if TIMER
-    auto t6 = std::chrono::system_clock::now();
+#if L2_TIMER
+    auto t6 = getTime();
 
     printTime(t1, t2, "make reverse data");
     printTime(t2, t3, "H to D");

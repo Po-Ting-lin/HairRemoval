@@ -8,7 +8,9 @@
 #define POWER_OF_TWO 1
 #define LOAD_FLOAT(i) d_Src[i]
 
-#define TIMER true
+#define L1_TIMER true
+#define L2_TIMER false
+#define L3_TIMER false
 #define DEBUG false
 
 class HairDetectionInfo {
@@ -60,13 +62,13 @@ public:
 	float Dt;
 	float Cw;
 
-	HairInpaintInfo(int width, int height, int channels, int rescale) {
+	HairInpaintInfo(int width, int height, int channels, int iters, int rescale) {
 		Width = width / rescale;
 		Height = height / rescale;
 		Channels = channels;
 		MixGpuChannels = 2;
 		Rescale = rescale;
-		Iters = 500;
+		Iters = iters;
 		Dt = 0.1f;
 		Cw = 4.0f;
 		NumberOfC1Elements = width * height / rescale / rescale;

@@ -11,18 +11,17 @@ int main() {
 	}
 
 	//displayImage(image, "image", false);
-
 	/*******************************************************/
 	bool isGPU = true;
-	auto start = std::chrono::system_clock::now();
+#if L1_TIMER
+	auto start = getTime();
+#endif
 	hairDetection(src, dst, isGPU);
-	auto end = std::chrono::system_clock::now();
-
-	// time
-	std::chrono::duration<double> elapsed_seconds = end - start;
-	std::cout << "total time consume: " << elapsed_seconds.count() << std::endl;
+#if L1_TIMER
+	auto end = getTime();
+	printTime(start, end, "total time consume: ");
+#endif
 	/*******************************************************/
-
 	displayImage(dst, "output", true);
 
 	return 0;

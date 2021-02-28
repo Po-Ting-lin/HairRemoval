@@ -4,7 +4,6 @@
 #include "parameters.h"
 
 
-
 class EntropyBasedThreshold 
 {
 public:

@@ -44,6 +44,10 @@ static float sum8f(__m256 x) {
 }
 #endif
 
+inline std::chrono::system_clock::time_point getTime() {
+    return std::chrono::system_clock::now();
+}
+
 inline float getRand(void)
 {
     return (float)(rand() % 16);

@@ -1,87 +1,68 @@
 #include "hair_inpainting_CPU.h"
 
-void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float* dstMask, float* dstMaskImage, bool channelSplit) {
+void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float* dstMask, float* dstMaskImage) {
 	const int width = srcImage.cols;
 	const int height = srcImage.rows;
 	uchar* src_image_ptr = srcImage.data;
 	uchar* src_mask_ptr = srcMask.data;
+#pragma omp parallel for
 	for (int i = 0; i < height * width; i++) {
 		dstMask[i] = src_mask_ptr[i] != 0 ? 0.0f : 1.0f;
 	}
-	int max_r = 0;
-	int max_g = 0;
-	int max_b = 0;
-	int min_r = 255;
-	int min_g = 255;
-	int min_b = 255;
 	int pixel = 0;
-	int range_r, range_g, range_b;
-	int i = 0;
-	int maskI = 0;
+	int index = 0;
+	int min_rgb[] = { 255, 255, 255 };
+	int max_rgb[] = { 0, 0, 0 };
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
-			i = y * (width * 3) + (x * 3);
-			pixel = src_image_ptr[i];
-			if (pixel > max_r) max_r = pixel;
-			if (pixel < min_r) min_r = pixel;
-			pixel = src_image_ptr[i + 1];
-			if (pixel > max_g) max_g = pixel;
-			if (pixel < min_g) min_g = pixel;
-			pixel = src_image_ptr[i + 2];
-			if (pixel > max_b) max_b = pixel;
-			if (pixel < min_b) min_b = pixel;
-		}
-	}
-	range_r = max_r - min_r;
-	range_g = max_g - min_g;
-	range_b = max_b - min_b;
-	if (channelSplit) {
-		int min_list[] = { min_r, min_g, min_b };
-		int range_list[] = { range_r, range_g, range_b };
-		int srcI = 0;
-		int dstI = 0;
-		for (int k = 0; k < 3; k++) {
-			int channel_offset = k * width * height;
-			for (int y = 0; y < height; y++) {
-				for (int x = 0; x < width; x++) {
-					maskI = y * width + x;
-					srcI = y * (width * 3) + (x * 3) + k;
-					dstI = channel_offset + maskI;
-					float value = ((float)src_image_ptr[srcI] - min_list[k]) / range_list[k];
-					dstImage[dstI] = value;
-					dstMaskImage[dstI] = dstMask[maskI] > 0.0f ? value : 1.0f;
-				}
+			index = y * (width * 3) + (x * 3);
+			for (int k = 0; k < 3; k++) {
+				pixel = src_image_ptr[index + k];
+				if (pixel > max_rgb[k]) max_rgb[k] = pixel;
+				if (pixel < min_rgb[k]) min_rgb[k] = pixel;
 			}
 		}
 	}
-	else {
+	int range_list[] = { max_rgb[0] - min_rgb[0], max_rgb[1] - min_rgb[1], max_rgb[2] - min_rgb[2] };
+	for (int k = 0; k < 3; k++) {
+		int channel_offset = k * width * height;
+#pragma omp parallel for collapse (2)
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
-				i = y * (width * 3) + (x * 3);
-				maskI = y * width + x;
-				float r = ((float)src_image_ptr[i] - min_r) / range_r;
-				float g = ((float)src_image_ptr[i + 1] - min_g) / range_g;
-				float b = ((float)src_image_ptr[i + 2] - min_b) / range_b;
-				dstImage[i] = r;
-				dstImage[i + 1] = g;
-				dstImage[i + 2] = b;
-				dstMaskImage[i] = dstMask[maskI] > 0.0f ? r : 1.0f;
-				dstMaskImage[i + 1] = dstMask[maskI] > 0.0f ? g : 1.0f;
-				dstMaskImage[i + 2] = dstMask[maskI] > 0.0f ? b : 1.0f;
+				int maskI = y * width + x;
+				int srcI = y * (width * 3) + (x * 3) + k;
+				int dstI = channel_offset + maskI;
+				float value = ((float)src_image_ptr[srcI] - min_rgb[k]) / range_list[k];
+				dstImage[dstI] = value;
+				dstMaskImage[dstI] = dstMask[maskI] > 0.0f ? value : 1.0f;
+			}
+		}
+
+		for (int x = 0; x < width; x += width - 1) {
+			for (int y = 0; y < height; y++) {
+				int maskI = y * width + x;
+				int dstI = channel_offset + maskI;
+				dstMaskImage[dstI] = dstImage[dstI];
+			}
+		}
+		for (int y = 0; y < height; y += height - 1) {
+			for (int x = 0; x < width; x++) {
+				int maskI = y * width + x;
+				int dstI = channel_offset + maskI;
+				dstMaskImage[dstI] = dstImage[dstI];
 			}
 		}
 	}
 }
 
 void convertToMatArrayFormat(float* srcImage, float* dstImage, HairInpaintInfo info) {
-	int srcI = 0;
-	int dstI = 0;
 	for (int k = 0; k < info.Channels; k++) {
 		int channel_offset = k * info.Width * info.Height;
+#pragma omp parallel for collapse (2)
 		for (int y = 0; y < info.Height; y++) {
 			for (int x = 0; x < info.Width; x++) {
-				dstI = y * (info.Width * info.Channels) + (x * info.Channels) + k;
-				srcI = channel_offset + y * info.Width + x;
+				int dstI = y * (info.Width * info.Channels) + (x * info.Channels) + k;
+				int srcI = channel_offset + y * info.Width + x;
 				dstImage[dstI] = srcImage[srcI];
 			}
 		}
