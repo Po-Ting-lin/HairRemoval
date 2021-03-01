@@ -55,7 +55,7 @@ void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float*
 	}
 }
 
-void convertToMatArrayFormat(float* srcImage, float* dstImage, HairInpaintInfo info) {
+void convertToMatArrayFormat(float* srcImage, uchar* dstImage, HairInpaintInfo info) {
 	for (int k = 0; k < info.Channels; k++) {
 		int channel_offset = k * info.Width * info.Height;
 #pragma omp parallel for collapse (2)
@@ -63,7 +63,7 @@ void convertToMatArrayFormat(float* srcImage, float* dstImage, HairInpaintInfo i
 			for (int x = 0; x < info.Width; x++) {
 				int dstI = y * (info.Width * info.Channels) + (x * info.Channels) + k;
 				int srcI = channel_offset + y * info.Width + x;
-				dstImage[dstI] = srcImage[srcI];
+				dstImage[dstI] = (uchar)(255.0f * srcImage[srcI]);
 			}
 		}
 	}

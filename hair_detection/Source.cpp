@@ -24,5 +24,7 @@ int main() {
 	/*******************************************************/
 	displayImage(dst, "output", true);
 
+	src.release();
+	dst.release();
 	return 0;
 }

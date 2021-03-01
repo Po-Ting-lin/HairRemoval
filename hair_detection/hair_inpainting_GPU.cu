@@ -259,10 +259,10 @@ void hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo i
 	auto t2 = getTime();
 #endif
 	float* h_dst_array = nullptr;
-	float* h_result_temp = (float*)malloc(info.NumberOfC3Elements * sizeof(float));;
+	uchar* h_dst_RGB_array = (uchar*)malloc(info.NumberOfC3Elements * sizeof(uchar));
 	if (isGPU) {
-		//hairInpaintingGPU(normalized_mask, normalized_masked_src, h_dst_array, info);
-		hairInpaintingMix(normalized_mask, normalized_masked_src, h_dst_array, info);
+		hairInpaintingGPU(normalized_mask, normalized_masked_src, h_dst_array, info);
+		//hairInpaintingMix(normalized_mask, normalized_masked_src, h_dst_array, info);
 	}
 	else{
 		hairInpaintingCPU(normalized_mask, normalized_masked_src, h_dst_array, info);
@@ -270,9 +270,8 @@ void hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo i
 #if L3_TIMER
 	auto t3 = getTime();
 #endif
-	memcpy(h_result_temp, h_dst_array, info.NumberOfC3Elements * sizeof(float));
-	convertToMatArrayFormat(h_result_temp, h_dst_array, info);
-	cv::Mat dst_mat(info.Height, info.Width, CV_32FC3, h_dst_array);
+	convertToMatArrayFormat(h_dst_array, h_dst_RGB_array, info);
+	cv::Mat dst_mat(info.Height, info.Width, CV_8UC3, h_dst_RGB_array);
 	cv::resize(dst_mat, dst_mat, cv::Size(info.Width * info.Rescale, info.Height * info.Rescale));
 	dst = dst_mat;
 #if L3_TIMER
@@ -282,7 +281,6 @@ void hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo i
 	printTime(t2, t3, "main inpainting");
 	printTime(t3, t4, "resize2");
 #endif
-	free(h_result_temp);
 	free(normalized_src);
 	free(normalized_mask);
 	free(normalized_masked_src);

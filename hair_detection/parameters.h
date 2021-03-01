@@ -9,8 +9,8 @@
 #define LOAD_FLOAT(i) d_Src[i]
 
 #define L1_TIMER true
-#define L2_TIMER false
-#define L3_TIMER false
+#define L2_TIMER true
+#define L3_TIMER true
 #define DEBUG false
 
 class HairDetectionInfo {
