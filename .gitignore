@@ -4,10 +4,10 @@
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
 # Customized
-hair_detection/hair_detection.vcxproj
-hair_detection/hair_detection.vcxproj.filters
-hair_detection.sln
-hair_detection/*.jpg
+**.vcxproj
+**.vcxproj.filters
+**.sln
+HairRemoval/*.png
 
 # User-specific files
 *.rsuser

@@ -17,13 +17,13 @@ Three versions of hair detection with their performance, respectively.
 
 ## Demo  
 * image  
-![](/sample/raw.jpg)
+![](/sample/test.jpg)
 
 * mask  
-![](/sample/mask.jpg)
+![](/sample/test_mask.jpg)
 
 * result    
-![](/sample/processed.jpg)
+![](/sample/result.jpg)
 
 ## References
 

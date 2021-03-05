@@ -1,6 +1,6 @@
 #include "hair_inpainting_CPU.h"
 
-void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float* dstMask, float* dstMaskImage) {
+void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float* dstMask, float* dstMaskImage, HairInpaintInfo info) {
 	const int width = srcImage.cols;
 	const int height = srcImage.rows;
 	uchar* src_image_ptr = srcImage.data;
@@ -11,19 +11,17 @@ void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float*
 	}
 	int pixel = 0;
 	int index = 0;
-	int min_rgb[] = { 255, 255, 255 };
-	int max_rgb[] = { 0, 0, 0 };
 	for (int y = 0; y < height; y++) {
 		for (int x = 0; x < width; x++) {
 			index = y * (width * 3) + (x * 3);
 			for (int k = 0; k < 3; k++) {
 				pixel = src_image_ptr[index + k];
-				if (pixel > max_rgb[k]) max_rgb[k] = pixel;
-				if (pixel < min_rgb[k]) min_rgb[k] = pixel;
+				if (pixel > info.MaxRgb[k]) info.MaxRgb[k] = pixel;
+				if (pixel < info.MinRgb[k]) info.MinRgb[k] = pixel;
 			}
 		}
 	}
-	int range_list[] = { max_rgb[0] - min_rgb[0], max_rgb[1] - min_rgb[1], max_rgb[2] - min_rgb[2] };
+	int range_list[] = { info.MaxRgb[0] - info.MinRgb[0], info.MaxRgb[1] - info.MinRgb[1], info.MaxRgb[2] - info.MinRgb[2] };
 	for (int k = 0; k < 3; k++) {
 		int channel_offset = k * width * height;
 #pragma omp parallel for collapse (2)
@@ -32,7 +30,7 @@ void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float*
 				int maskI = y * width + x;
 				int srcI = y * (width * 3) + (x * 3) + k;
 				int dstI = channel_offset + maskI;
-				float value = ((float)src_image_ptr[srcI] - min_rgb[k]) / range_list[k];
+				float value = ((float)src_image_ptr[srcI] - info.MinRgb[k]) / range_list[k];
 				dstImage[dstI] = value;
 				dstMaskImage[dstI] = dstMask[maskI] > 0.0f ? value : 1.0f;
 			}
@@ -58,12 +56,14 @@ void normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float*
 void convertToMatArrayFormat(float* srcImage, uchar* dstImage, HairInpaintInfo info) {
 	for (int k = 0; k < info.Channels; k++) {
 		int channel_offset = k * info.Width * info.Height;
+		int range = info.MaxRgb[k] - info.MinRgb[k];
+		int offset = info.MinRgb[k];
 #pragma omp parallel for collapse (2)
 		for (int y = 0; y < info.Height; y++) {
 			for (int x = 0; x < info.Width; x++) {
 				int dstI = y * (info.Width * info.Channels) + (x * info.Channels) + k;
 				int srcI = channel_offset + y * info.Width + x;
-				dstImage[dstI] = (uchar)(255.0f * srcImage[srcI]);
+				dstImage[dstI] = (uchar)(range * srcImage[srcI] + offset);
 			}
 		}
 	}

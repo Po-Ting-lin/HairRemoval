@@ -36,7 +36,7 @@ public:
 		radiusOfInpaint = 5;
 		alpha = 1.4f;
 		beta = 0.5f;
-		hairWidth = 5.0f;
+		hairWidth = 4.0f;
 		ratioBBox = 4.0f;
 		sigmaX = 8.0f * (sqrt(2.0 * log(2) / CV_PI)) * hairWidth / alpha / beta / CV_PI;
 		sigmaY = 0.8f * sigmaX;
@@ -59,6 +59,8 @@ public:
 	int NumberOfC3Elements;
 	int NumberOfC2Elements;
 	int Iters;
+	int* MinRgb;
+	int* MaxRgb;
 	float Dt;
 	float Cw;
 
@@ -71,6 +73,8 @@ public:
 		Iters = iters;
 		Dt = 0.1f;
 		Cw = 4.0f;
+		MinRgb = new int[] { 255, 255, 255};
+		MaxRgb = new int[] { 0, 0, 0};
 		NumberOfC1Elements = width * height / rescale / rescale;
 		NumberOfC2Elements = width * height * 2 / rescale / rescale;
 		NumberOfC3Elements = width * height * channels / rescale / rescale;

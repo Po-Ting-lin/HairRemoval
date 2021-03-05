@@ -254,7 +254,7 @@ void hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, HairInpaintInfo i
 	float* normalized_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
 	float* normalized_mask = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
 	float* normalized_masked_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-	normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src);
+	normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src, info);
 #if L3_TIMER
 	auto t2 = getTime();
 #endif

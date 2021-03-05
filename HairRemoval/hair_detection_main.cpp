@@ -44,16 +44,16 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
 #endif
 
     //cleanIsolatedComponent(mask, para);
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5), cv::Point(-1, -1));
-    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 2);
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3), cv::Point(-1, -1));
+    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 3);
     
 #if L2_TIMER
     auto t7 = getTime();
 #endif
 
     cv::Mat removed_dst;
-    const int rescale_factor = 2;
-    const int iters = 500;
+    const int rescale_factor = 1;
+    const int iters = 2000;
     HairInpaintInfo hair_inpainting_info(
         src.cols,
         src.rows,
@@ -61,7 +61,7 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
         iters,
         rescale_factor);
     hairInpainting(src, mask, removed_dst, hair_inpainting_info, isGPU);
-    dst = mask;
+    dst = removed_dst;
 
 #if L2_TIMER
     auto t8 = getTime();
