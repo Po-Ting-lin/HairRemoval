@@ -3,14 +3,13 @@
 
 int main() {
 	cv::Mat src, dst;
-	src = cv::imread(R"(raw2560.jpg)");
+	src = cv::imread(R"(test.png)");
 
 	if (!src.data) {
 		std::cout << "Error: the image wasn't correctly loaded." << std::endl;
 		return -1;
 	}
 
-	//displayImage(image, "image", false);
 	/*******************************************************/
 	bool isGPU = true;
 #if L1_TIMER
@@ -22,7 +21,7 @@ int main() {
 	printTime(start, end, "total time consume: ");
 #endif
 	/*******************************************************/
-	displayImage(dst, "output", true);
+	displayImage(dst, "output", false);
 
 	src.release();
 	dst.release();
