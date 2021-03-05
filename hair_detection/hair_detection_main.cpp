@@ -61,7 +61,7 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
         iters,
         rescale_factor);
     hairInpainting(src, mask, removed_dst, hair_inpainting_info, isGPU);
-    dst = removed_dst;
+    dst = mask;
 
 #if L2_TIMER
     auto t8 = getTime();
