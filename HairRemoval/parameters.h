@@ -32,11 +32,11 @@ public:
 
 	HairDetectionInfo() {
 		numberOfFilter = 8;
-		minArea = 200;
+		minArea = 10;
 		radiusOfInpaint = 5;
 		alpha = 1.4f;
 		beta = 0.5f;
-		hairWidth = 4.0f;
+		hairWidth = 2.0f;
 		ratioBBox = 4.0f;
 		sigmaX = 8.0f * (sqrt(2.0 * log(2) / CV_PI)) * hairWidth / alpha / beta / CV_PI;
 		sigmaY = 0.8f * sigmaX;

@@ -43,9 +43,9 @@ bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU) {
     auto t6 = getTime();
 #endif
 
-    //cleanIsolatedComponent(mask, para);
+    cleanIsolatedComponent(mask, para);
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3), cv::Point(-1, -1));
-    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 3);
+    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 1);
     
 #if L2_TIMER
     auto t7 = getTime();
