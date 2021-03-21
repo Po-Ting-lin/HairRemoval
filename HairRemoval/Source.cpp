@@ -3,7 +3,7 @@
 
 int main() {
 	cv::Mat src, dst;
-	src = cv::imread(R"(test22.png)");
+	src = cv::imread(R"(test2.png)");
 
 	if (!src.data) {
 		std::cout << "Error: the image wasn't correctly loaded." << std::endl;

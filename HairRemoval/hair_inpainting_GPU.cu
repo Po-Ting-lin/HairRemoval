@@ -84,31 +84,6 @@ __global__ void PDEHeatDiffusion(float* mask, float* src, float* tempSrc, int wi
 	}
 }
 
-__global__ void PDEHeatDiffusion(float* mask, float* src, float* tempSrc, int width, int height, int ch, int iters) {
-	int x = threadIdx.x + blockDim.x * blockIdx.x;
-	int y = threadIdx.y + blockDim.y * blockIdx.y;
-	if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return;
-	float center;
-	int c3i = 0;
-	int ch_offset = 0;
-	float mask_center = mask[y * width + x];
-
-	for (int i = 0; i < iters; i++) {
-		for (int k = 0; k < ch; k++) {
-			ch_offset = k * width * height;
-			c3i = ch_offset + y * width + x;
-			center = tempSrc[c3i];
-			tempSrc[c3i] = center
-				+ d_dt[0] * (tempSrc[ch_offset + (y - 1) * width + x]
-					+ tempSrc[ch_offset + (y + 1) * width + x]
-					+ tempSrc[ch_offset + y * width + (x - 1)]
-					+ tempSrc[ch_offset + y * width + (x + 1)]
-					- d_center_w[0] * center)
-				- d_dt[0] * mask_center * (center - src[c3i]);
-		}
-	}
-}
-
 void hairInpaintingGPU(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info) {
 #if L3_TIMER
 	cudaEvent_t start, stop;
@@ -138,6 +113,7 @@ void hairInpaintingGPU(float* normalized_mask, float* normalized_masked_src, flo
 
 	for (int i = 0; i < info.Iters; i++) {
 		PDEHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
+		//PDEHeatDiffusionSMEM << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height);
 	}
 	gpuErrorCheck(cudaDeviceSynchronize());
 #if L3_TIMER
