@@ -7,10 +7,11 @@
 class EntropyBasedThreshold 
 {
 public:
-	EntropyBasedThreshold(cv::Mat& src);
-	int Process();
+	EntropyBasedThreshold(cv::Mat& src, bool isGPU);
+	int getThreshold();
 
 private:
+	bool _isGPU;
 	uchar* _data;
 	float* _glcm;
 	int _width;

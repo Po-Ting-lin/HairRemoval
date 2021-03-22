@@ -4,10 +4,13 @@
 int main() {
 	cv::Mat src, dst;
 	src = cv::imread(R"(test2.png)");
-
 	if (!src.data) {
 		std::cout << "Error: the image wasn't correctly loaded." << std::endl;
 		return -1;
+	}
+	if (src.type() != CV_8UC3) {
+		std::cout << "input image must be CV_8UC3! " << std::endl;
+		return false;
 	}
 	displayImage(src, "src", false);
 	/*******************************************************/
@@ -15,7 +18,7 @@ int main() {
 #if L1_TIMER
 	auto start = getTime();
 #endif
-	hairDetection(src, dst, isGPU);
+	hairRemoval(src, dst, isGPU);
 #if L1_TIMER
 	auto end = getTime();
 	printTime(start, end, "total time consume: ");

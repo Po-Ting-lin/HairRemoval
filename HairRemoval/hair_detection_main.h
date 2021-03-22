@@ -8,4 +8,4 @@
 #include "entropy_thresholding.h"
 #include "hair_detection_CPU.h"
 
-bool hairDetection(cv::Mat& src, cv::Mat& dst, bool isGPU);
+bool hairRemoval(cv::Mat& src, cv::Mat& dst, bool isGPU);

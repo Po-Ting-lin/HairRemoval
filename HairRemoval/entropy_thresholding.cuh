@@ -62,7 +62,7 @@ __global__ void reversedDataKernel(
     int nx
 );
 
-int entropyThesholdingGPU(cv::Mat& glcm);
+int entropyThesholdingGPU(float* glcm);
 void entropyCPU(float* h_data, float* h_e, int width, bool reversed);
 void reversedData(float* d_data, float* d_reversed_data, int full_width);
 void getAreaArray(float* d_data, float* d_pA, cudaStream_t* stream, EntropyThresholdDeviceInfo& info);

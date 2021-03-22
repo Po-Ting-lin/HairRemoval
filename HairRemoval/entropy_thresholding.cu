@@ -135,7 +135,7 @@ __global__ void reversedDataKernel(float* d_data, float* d_reversed_data, int nx
     }
 }
 
-int entropyThesholdingGPU(cv::Mat& glcm) {
+int entropyThesholdingGPU(float* glcm) {
     float
         * h_data,
         * h_reversed_data,
@@ -160,7 +160,7 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
 #endif
 
     // host 
-    h_data = (float*)glcm.data;
+    h_data = glcm;
     h_reversed_data = (float*)malloc(dynamic_range * dynamic_range * sizeof(float*));
     h_eA = (float*)malloc(dynamic_range * sizeof(float*));
     h_eC = (float*)malloc(dynamic_range * sizeof(float*));
@@ -251,7 +251,7 @@ int entropyThesholdingGPU(cv::Mat& glcm) {
     printTime(t5, t6, "conbine");
 #endif
 
-    printf("min threshold : %d\n", min_t);
+    //printf("min threshold : %d\n", min_t);
 
     gpuErrorCheck(cudaFree(d_data));
     gpuErrorCheck(cudaFree(d_reversed_data));

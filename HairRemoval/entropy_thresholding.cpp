@@ -1,15 +1,17 @@
 #include "entropy_thresholding.h"
+#include "entropy_thresholding.cuh"
 
-EntropyBasedThreshold::EntropyBasedThreshold(cv::Mat& src) {
+EntropyBasedThreshold::EntropyBasedThreshold(cv::Mat& src, bool isGPU) {
     _data = (uchar*)src.data;
     _glcm = new float[DYNAMICRANGE * DYNAMICRANGE];
     _width = src.cols;
     _height = src.rows;
+    _isGPU = isGPU;
 }
 
-int EntropyBasedThreshold::Process() {
+int EntropyBasedThreshold::getThreshold() {
     _getGrayLevelCoOccurrenceMatrix();
-    return _entropyThesholding();
+    return _isGPU ? entropyThesholdingGPU(_glcm) : _entropyThesholding();
 }
 
 /* Gray Level Co-Occurrence Matrix (degree 0) */

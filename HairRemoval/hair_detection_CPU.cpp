@@ -1,15 +1,27 @@
 #include "hair_detection_CPU.h"
+#include "hair_detection_GPU.cuh"
+
+void hairDetecting(cv::Mat& src, cv::Mat& dst, HairDetectionInfo info) {
+    if (info.IsGPU) getHairMaskGPU(src, dst, info);
+    else getHairMaskCPU(src, dst, info);
+}
+
+void getHairMaskCPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo info) {
+    cv::Mat chL(cv::Size(src.cols, src.rows), CV_8U);
+    extractLChannel(src, chL);
+    gaborFiltering(chL, dst, info);
+}
 
 cv::Mat getGaborFilter(float theta, HairDetectionInfo para) {
-    cv::Mat output(cv::Size(para.kernelRadius * 2 + 1, para.kernelRadius * 2 + 1), CV_64F, cv::Scalar(0.0));
+    cv::Mat output(cv::Size(para.KernelRadius * 2 + 1, para.KernelRadius * 2 + 1), CV_64F, cv::Scalar(0.0));
     double* outPtr = (double*)output.data;
-    for (int y = -para.kernelRadius; y < para.kernelRadius + 1; y++) {
-        for (int x = -para.kernelRadius; x < para.kernelRadius + 1; x++, outPtr++) {
+    for (int y = -para.KernelRadius; y < para.KernelRadius + 1; y++) {
+        for (int x = -para.KernelRadius; x < para.KernelRadius + 1; x++, outPtr++) {
             double xx = x;
             double yy = y;
             double xp = xx * cos(theta) + yy * sin(theta);
             double yp = yy * cos(theta) - xx * sin(theta);
-            *outPtr = exp(-CV_PI * (xp * xp / para.sigmaX / para.sigmaX + yp * yp / para.sigmaY / para.sigmaY)) * cos(CV_2PI * para.beta / para.hairWidth * xp + CV_PI);
+            *outPtr = exp(-CV_PI * (xp * xp / para.SigmaX / para.SigmaX + yp * yp / para.SigmaY / para.SigmaY)) * cos(CV_2PI * para.Beta / para.HairWidth * xp + CV_PI);
         }
     }
     return output;
@@ -18,7 +30,7 @@ cv::Mat getGaborFilter(float theta, HairDetectionInfo para) {
 void gaborFiltering(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
     const int rows = src.rows;
     const int cols = src.cols;
-    const int depth = para.numberOfFilter;
+    const int depth = para.NumberOfFilter;
     const int step = src.channels();
     uchar* cube = new uchar[rows * cols * depth];
 
@@ -98,7 +110,7 @@ void cleanIsolatedComponent(cv::Mat& src, HairDetectionInfo para) {
         int area = *(statsPtr + cv::CC_STAT_AREA);
         double ratio = (double)big_boundary / (double)small_boundary;
 
-        if ((area > para.minArea)) {
+        if ((area > para.MinArea)) {
             label_to_stay.push_back(i);
         }
     }
@@ -115,17 +127,4 @@ void cleanIsolatedComponent(cv::Mat& src, HairDetectionInfo para) {
     cv::LUT(labels_uint8, look_up_table, dst);
 
     src = dst;
-}
-
-void inpaintHair(cv::Mat& src, cv::Mat& dst, cv::Mat& mask, HairDetectionInfo para) {
-    int dilation_size = 1;
-    cv::Mat element = cv::getStructuringElement(0, cv::Size(2 * dilation_size + 1, 2 * dilation_size + 1), cv::Point(dilation_size, dilation_size));
-    cv::dilate(mask, mask, element, cv::Point(-1, -1), 2);
-    cv::inpaint(src, mask, dst, para.radiusOfInpaint, cv::INPAINT_TELEA);
-}
-
-void getHairMaskCPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
-    cv::Mat chL(cv::Size(src.cols, src.rows), CV_8U);
-    extractLChannel(src, chL);
-    gaborFiltering(chL, dst, para);
 }

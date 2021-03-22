@@ -246,17 +246,17 @@ void modulateAndNormalize(
 }
 
 float* initGaborFilterCube(HairDetectionInfo para) {
-    float* output = new float[para.kernelW * para.kernelH * para.numberOfFilter];
+    float* output = new float[para.KernelW * para.KernelH * para.NumberOfFilter];
     float* output_ptr = output;
-    for (int curNum = 0; curNum < para.numberOfFilter; curNum++) {
-        float theta = (float)CV_PI / para.numberOfFilter * curNum;
-        for (int y = -para.kernelRadius; y < para.kernelRadius + 1; y++) {
-            for (int x = -para.kernelRadius; x < para.kernelRadius + 1; x++, output_ptr++) {
+    for (int curNum = 0; curNum < para.NumberOfFilter; curNum++) {
+        float theta = (float)CV_PI / para.NumberOfFilter * curNum;
+        for (int y = -para.KernelRadius; y < para.KernelRadius + 1; y++) {
+            for (int x = -para.KernelRadius; x < para.KernelRadius + 1; x++, output_ptr++) {
                 float xx = x;
                 float yy = y;
                 float xp = xx * cos(theta) + yy * sin(theta);
                 float yp = yy * cos(theta) - xx * sin(theta);
-                *output_ptr = exp((float)(-CV_PI) * (xp * xp / para.sigmaX / para.sigmaX + yp * yp / para.sigmaY / para.sigmaY)) * cos((float)CV_2PI * para.beta / para.hairWidth * xp + (float)CV_PI);
+                *output_ptr = exp((float)(-CV_PI) * (xp * xp / para.SigmaX / para.SigmaX + yp * yp / para.SigmaY / para.SigmaY)) * cos((float)CV_2PI * para.Beta / para.HairWidth * xp + (float)CV_PI);
             }
         }
     }

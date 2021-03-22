@@ -32,7 +32,7 @@ __global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int
     }
 }
 
-void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
+void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo info) {
 
 #if L3_TIMER
     auto t1 = getTime();
@@ -57,11 +57,9 @@ void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
         fftPlanInv;
 
     uchar* src_ptr = src.data;
-    const int dataH = src.rows;
-    const int dataW = src.cols;
-    const int depth = para.numberOfFilter;
-    const int fftH = snapTransformSize(dataH + para.kernelH - 1);
-    const int fftW = snapTransformSize(dataW + para.kernelW - 1);
+    const int depth = info.NumberOfFilter;
+    const int fftH = snapTransformSize(info.Height + info.KernelH - 1);
+    const int fftW = snapTransformSize(info.Width + info.KernelW - 1);
     const unsigned long src_size = src.cols * src.rows * src.channels();
     const unsigned long src_byte_size = src_size * sizeof(uchar);
     const unsigned long src_c_size = src.cols * src.rows;
@@ -128,31 +126,31 @@ void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
 #endif
 
     // init data
-    float* h_kernels = initGaborFilterCube(para);
+    float* h_kernels = initGaborFilterCube(info);
 
 #if L3_TIMER
     auto t5 = getTime();
 #endif
 
     // allocation
-    gpuErrorCheck(cudaMalloc((void**)&d_Kernel, para.kernelH * para.kernelW * para.numberOfFilter * sizeof(float)));
+    gpuErrorCheck(cudaMalloc((void**)&d_Kernel, info.KernelH * info.KernelW * info.NumberOfFilter * sizeof(float)));
     gpuErrorCheck(cudaMalloc((void**)&d_PaddedData, fftH * fftW * sizeof(float)));
     gpuErrorCheck(cudaMalloc((void**)&d_PaddedKernel, fftH * fftW * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_DepthResult, fftH * fftW * para.numberOfFilter * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_Result, dataH * dataW * sizeof(uchar)));
+    gpuErrorCheck(cudaMalloc((void**)&d_DepthResult, fftH * fftW * info.NumberOfFilter * sizeof(float)));
+    gpuErrorCheck(cudaMalloc((void**)&d_Result, info.Height * info.Width * sizeof(uchar)));
     gpuErrorCheck(cudaMalloc((void**)&d_DataSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));
     gpuErrorCheck(cudaMalloc((void**)&d_KernelSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));
     gpuErrorCheck(cudaMalloc((void**)&d_TempSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));
 
     // H to D
-    gpuErrorCheck(cudaMemcpy(d_Kernel, h_kernels, para.kernelH * para.kernelW * para.numberOfFilter * sizeof(float), cudaMemcpyHostToDevice));
+    gpuErrorCheck(cudaMemcpy(d_Kernel, h_kernels, info.KernelH * info.KernelW * info.NumberOfFilter * sizeof(float), cudaMemcpyHostToDevice));
 
 #if L3_TIMER
     auto t6 = getTime();
 #endif
 
     // init value
-    padDataClampToBorder(d_PaddedData, device_src_c_ptr, fftH, fftW, dataH, dataW, para.kernelH, para.kernelW, para.kernelY, para.kernelX);
+    padDataClampToBorder(d_PaddedData, device_src_c_ptr, fftH, fftW, info.Height, info.Width, info.KernelH, info.KernelW, info.KernelY, info.KernelX);
 
 #if L3_TIMER
     auto t7 = getTime();
@@ -170,11 +168,11 @@ void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
     auto t8 = getTime();
 #endif
 
-    for (int i = 0; i < para.numberOfFilter; i++) {
-        int kernel_offset = i * para.kernelH * para.kernelW;
+    for (int i = 0; i < info.NumberOfFilter; i++) {
+        int kernel_offset = i * info.KernelH * info.KernelW;
         int data_offset = i * fftH * fftW;
 
-        padKernel(d_PaddedKernel, &(d_Kernel[kernel_offset]), fftH, fftW, para.kernelH, para.kernelW, para.kernelY, para.kernelX);
+        padKernel(d_PaddedKernel, &(d_Kernel[kernel_offset]), fftH, fftW, info.KernelH, info.KernelW, info.KernelY, info.KernelX);
 
         // FFT kernel
         gpuErrorCheck(cufftExecR2C(fftPlanFwd, (cufftReal*)d_PaddedKernel, (cufftComplex*)d_KernelSpectrum));
@@ -200,14 +198,14 @@ void getHairMaskGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo para) {
     }
 #endif
 
-    cubeReduction(d_DepthResult, d_Result, fftH, fftW, dataH, dataW, depth);
+    cubeReduction(d_DepthResult, d_Result, fftH, fftW, info.Height, info.Width, depth);
 
 #if L3_TIMER
     auto t10 = getTime();
 #endif
 
     gpuErrorCheck(cudaDeviceSynchronize());
-    gpuErrorCheck(cudaMemcpy(dst.data, d_Result, dataH * dataW * sizeof(uchar), cudaMemcpyDeviceToHost));
+    gpuErrorCheck(cudaMemcpy(dst.data, d_Result, info.Height * info.Width * sizeof(uchar), cudaMemcpyDeviceToHost));
 
 #if L3_TIMER
     auto t11 = getTime();
