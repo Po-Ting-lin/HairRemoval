@@ -155,7 +155,7 @@ int entropyThesholdingGPU(float* glcm) {
 
     int dynamic_range = 256;
 
-#if L2_TIMER
+#if L3_TIMER
     auto t1 = getTime();
 #endif
 
@@ -170,7 +170,7 @@ int entropyThesholdingGPU(float* glcm) {
         h_reversed_data[j] = h_data[i];
     }
 
-#if L2_TIMER
+#if L3_TIMER
     auto t2 = getTime();
 #endif
 
@@ -185,7 +185,7 @@ int entropyThesholdingGPU(float* glcm) {
     gpuErrorCheck(cudaMalloc((void**)&d_eC, dynamic_range * sizeof(float)));
     gpuErrorCheck(cudaMemcpy(d_data, h_data, dynamic_range * dynamic_range * sizeof(float), cudaMemcpyHostToDevice));
 
-#if L2_TIMER
+#if L3_TIMER
     auto t3 = getTime();
 #endif
 
@@ -197,7 +197,7 @@ int entropyThesholdingGPU(float* glcm) {
     entropyCPU(h_data, h_eA, dynamic_range, false);
     entropyCPU(h_reversed_data, h_eC, dynamic_range, true);
 
-#if L2_TIMER
+#if L3_TIMER
     auto t35 = getTime();
 #endif
 
@@ -218,14 +218,14 @@ int entropyThesholdingGPU(float* glcm) {
         cudaStreamDestroy(stream[i]);
     }
 
-#if L2_TIMER
+#if L3_TIMER
     auto t4 = getTime();
 #endif
 
     gpuErrorCheck(cudaMemcpy(h_eA, d_eA, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
     gpuErrorCheck(cudaMemcpy(h_eC, d_eC, dynamic_range * sizeof(float), cudaMemcpyDeviceToHost));
 
-#if L2_TIMER
+#if L3_TIMER
     auto t5 = getTime();
 #endif
 
@@ -240,7 +240,7 @@ int entropyThesholdingGPU(float* glcm) {
         }
     }
 
-#if L2_TIMER
+#if L3_TIMER
     auto t6 = getTime();
 
     printTime(t1, t2, "make reverse data");
