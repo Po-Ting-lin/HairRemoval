@@ -81,8 +81,8 @@ public:
 		MixGpuChannels = 2;
 		Dt = 0.1f;
 		Cw = 4.0f;
-		MinRgb = new int[] { 255, 255, 255};
-		MaxRgb = new int[] { 0, 0, 0};
+		MinRgb = new int[3] { 255, 255, 255};
+		MaxRgb = new int[3] { 0, 0, 0};
 		NumberOfC1Elements = width * height / RescaleFactor / RescaleFactor;
 		NumberOfC2Elements = width * height * 2 / RescaleFactor / RescaleFactor;
 		NumberOfC3Elements = width * height * channels / RescaleFactor / RescaleFactor;
