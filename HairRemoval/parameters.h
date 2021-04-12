@@ -1,5 +1,6 @@
 #pragma once
 #define TILE_DIM 32
+#define TILE_DIM2 17
 #define BLOCK_DIM 8
 #define EPSILON 1e-8
 #define D_NUM_STREAMS 6
@@ -42,7 +43,7 @@ public:
 		MinArea = 10;
 		Alpha = 1.4f;
 		Beta = 0.5f;
-		HairWidth = 2.0f;
+		HairWidth = 4.0f;
 		RatioBBox = 4.0f;
 		SigmaX = 8.0f * (sqrt(2.0 * log(2) / CV_PI)) * HairWidth / Alpha / Beta / CV_PI;
 		SigmaY = 0.8f * SigmaX;
@@ -73,8 +74,8 @@ public:
 	float Cw;
 
 	HairInpaintInfo(int width, int height, int channels, bool isGPU) {
-		RescaleFactor = 1;
-		Iters = 2000;
+		RescaleFactor = 2;
+		Iters = 1000;
 		Width = width / RescaleFactor;
 		Height = height / RescaleFactor;
 		Channels = channels;

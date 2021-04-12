@@ -10,24 +10,14 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
 
 add_library(hairRemovalLib STATIC
   HairRemoval/cuda_error.cuh
-  HairRemoval/entropy_thresholding.cpp
-  HairRemoval/entropy_thresholding.cu
-  HairRemoval/entropy_thresholding.cuh
-  HairRemoval/entropy_thresholding.h
-  HairRemoval/entropy_thresholding.cuh
-  HairRemoval/fft_convolution.cu
-  HairRemoval/fft_convolution.cuh
-  HairRemoval/hair_detection_CPU.cpp
-  HairRemoval/hair_detection_CPU.h
-  HairRemoval/hair_detection_GPU.cu
-  HairRemoval/hair_detection_GPU.cuh
-  HairRemoval/hair_detection_main.cpp
-  HairRemoval/hair_detection_main.h
-  HairRemoval/hair_inpainting_CPU.cpp
-  HairRemoval/hair_inpainting_CPU.h
-  HairRemoval/hair_inpainting_GPU.cu
-  HairRemoval/hair_inpainting_GPU.cuh
-  HairRemoval/parameters_GPU.cuh
+  HairRemoval/entropyThreshold.cu
+  HairRemoval/entropyThreshold.cuh
+  HairRemoval/hairRemoval.cu
+  HairRemoval/hairRemoval.cuh
+  HairRemoval/hairRemovalEngine.cu
+  HairRemoval/hairRemovalEngine.cuh
+  HairRemoval/hairRemovalStruct.h
+  HairRemoval/timer.cuh
   HairRemoval/parameters.h
   HairRemoval/Source.cpp
   HairRemoval/utils.h
