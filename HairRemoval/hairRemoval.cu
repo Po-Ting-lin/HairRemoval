@@ -40,6 +40,7 @@ void HairRemoval::Process(cv::Mat& src, cv::Mat& dst) {
 #if PEEK_MASK
     displayImage(mask, "mask", false);
 #endif
+    gpuErrorCheck(cudaDeviceReset());
 }
 
 void HairRemoval::_hairDetection(cv::Mat& src, cv::Mat& dst, HairDetectionInfo info) {
@@ -157,7 +158,6 @@ void HairRemoval::_hairDetectionGPU(cv::Mat& src, cv::Mat& dst, HairDetectionInf
     gpuErrorCheck(cudaFree(d_src_c_ptr));
     gpuErrorCheck(cudaFree(d_Kernel));
     gpuErrorCheck(cudaFree(d_DepthResult));
-    //gpuErrorCheck(cudaDeviceReset()); not yet
 }
 
 void HairRemoval::_hairDetectionCPU(cv::Mat& src, cv::Mat& dst, HairDetectionInfo info) {
@@ -238,7 +238,6 @@ void HairRemoval::_hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst, Hai
     float* normalized_mask = (float*)malloc(info.NumberOfC1Elements * sizeof(float));
     float* normalized_masked_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
     _normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src, info);
-
     float* h_dst_array = nullptr;
     uchar* h_dst_RGB_array = (uchar*)malloc(info.NumberOfC3Elements * sizeof(uchar));
     if (info.IsGPU) {
@@ -487,7 +486,6 @@ void HairRemoval::_hairInpaintingGPU(float* normalized_mask, float* normalized_m
     gpuErrorCheck(cudaFree(d_normalized_mask));
     gpuErrorCheck(cudaFree(d_normalized_masked_src));
     gpuErrorCheck(cudaFree(d_normalized_masked_src_temp));
-    gpuErrorCheck(cudaDeviceReset());
 }
 
 void HairRemoval::_hairInpaintingCPU(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info) {

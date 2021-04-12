@@ -5,7 +5,7 @@ EntropyBasedThreshold::EntropyBasedThreshold(bool isGPU) {
     _width = 0;
     _height = 0;
     _glcm = new float[DYNAMICRANGE * DYNAMICRANGE];
-    _isGPU = false;
+    _isGPU = isGPU;
 }
 
 int EntropyBasedThreshold::getThreshold(cv::Mat& src) {
@@ -295,7 +295,6 @@ int EntropyBasedThreshold::_entropyThesholdingGPU() {
     free(h_eA);
     free(h_eC);
     free(h_AC);
-    gpuErrorCheck(cudaDeviceReset());
     return min_t;
 }
 
