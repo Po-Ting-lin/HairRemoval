@@ -6,6 +6,7 @@ HairRemoval::HairRemoval(bool isGPU) {
 }
 
 void HairRemoval::Process(cv::Mat& src, cv::Mat& dst) {
+    cudaFree(0);
     cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U, cv::Scalar(0));
     HairDetectionInfo hair_detection_info(src.cols, src.rows, src.channels(), _isGPU);
     HairInpaintInfo hair_inpainting_info(src.cols, src.rows, src.channels(), _isGPU);
