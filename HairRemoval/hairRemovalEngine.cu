@@ -253,8 +253,6 @@ __global__ void pdeHeatDiffusionSMEM(float* mask, float* src, float* tempSrc, in
 
     __syncthreads();
 
-    //if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return;
-
     float center = smem[threadIdx.y][threadIdx.x];
 
     float tmp = 0.0f;
@@ -287,8 +285,6 @@ __global__ void pdeHeatDiffusionSMEM2(float* mask, float* src, float* tempSrc, i
 
     __syncthreads();
 
-    //if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1) return;
-
     float center = smem[threadIdx.y][threadIdx.x];
     float tmp = 0.0f;
     float count = 0.0f;
@@ -308,7 +304,6 @@ __global__ void pdeHeatDiffusionSMEM2(float* mask, float* src, float* tempSrc, i
     tempSrc[c3i] = fmaf(-0.2f, fmaf(count, center, fmaf(mask[y * width + x], (center - src[c3i]), -tmp)), center);
 }
 
-
 __global__ void pdeHeatDiffusion(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -319,10 +314,10 @@ __global__ void pdeHeatDiffusion(float* mask, float* src, float* tempSrc, int wi
     int c3i = ch_offset + y * width + x;
     float center = tempSrc[c3i];
     tempSrc[c3i] = center
-        + d_dt[0] * (tempSrc[ch_offset + (y - 1) * width + x]
+        + 0.2f * (tempSrc[ch_offset + (y - 1) * width + x]
             + tempSrc[ch_offset + (y + 1) * width + x]
             + tempSrc[ch_offset + y * width + (x - 1)]
             + tempSrc[ch_offset + y * width + (x + 1)]
-            - d_center_w[0] * center)
-        - d_dt[0] * mask[y * width + x] * (center - src[c3i]);
+            - 4.0f * center)
+        - 0.2f * mask[y * width + x] * (center - src[c3i]);
 }

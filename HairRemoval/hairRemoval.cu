@@ -6,7 +6,6 @@ HairRemoval::HairRemoval(bool isGPU) {
 }
 
 void HairRemoval::Process(cv::Mat& src, cv::Mat& dst) {
-    cudaFree(0);
     cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U, cv::Scalar(0));
     HairDetectionInfo hair_detection_info(src.cols, src.rows, src.channels(), _isGPU);
     HairInpaintInfo hair_inpainting_info(src.cols, src.rows, src.channels(), _isGPU);
@@ -470,7 +469,7 @@ void HairRemoval::_hairInpaintingGPU(float* normalized_mask, float* normalized_m
     gpuErrorCheck(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice));
 
     for (int i = 0; i < info.Iters; i++) {
-        //PDEHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
+        //pdeHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
         if (i % 2 == 0) {
             pdeHeatDiffusionSMEM << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
         }

@@ -1,6 +1,6 @@
 #pragma once
 #define TILE_DIM 32
-#define TILE_DIM2 17
+#define TILE_DIM2 21
 #define BLOCK_DIM 8
 #define EPSILON 1e-8
 #define D_NUM_STREAMS 6
@@ -74,7 +74,7 @@ public:
 	float Cw;
 
 	HairInpaintInfo(int width, int height, int channels, bool isGPU) {
-		RescaleFactor = 2;
+		RescaleFactor = 1;
 		Iters = 1000;
 		Width = width / RescaleFactor;
 		Height = height / RescaleFactor;

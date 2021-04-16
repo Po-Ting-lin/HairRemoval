@@ -95,7 +95,6 @@ static int snapTransformSize(int dataSize) {
         return iAlignUp(dataSize, 512);
 }
 
-
 static void printTime(std::chrono::system_clock::time_point t1, std::chrono::system_clock::time_point t2, std::string name) {
     std::chrono::duration<double> time_lapse = t2 - t1;
     std::cout << name << " time consume: " << time_lapse.count() << " s" << std::endl;

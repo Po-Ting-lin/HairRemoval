@@ -1,7 +1,9 @@
 #include "hairRemoval.cuh"
+#include "warmup.cuh"
 #include "utils.h"
 
 int main() {
+	warmup();
 	cv::Mat src, dst;
 	src = cv::imread(R"(demo1280.png)");
 	if (!src.data) {
