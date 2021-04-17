@@ -1,40 +1,47 @@
 cmake_minimum_required(VERSION 3.0.0)
-project(hair LANGUAGES CXX CUDA VERSION 0.1.0)
+project(hairProject LANGUAGES CXX CUDA VERSION 0.1.0)
 
 include(CTest)
 enable_testing()
+
+
+set(CUFFT_INCLUDE_DIRS "/usr/local/cuda/include")
 
 # Using AVX, AVX intrinsic set
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
 
-add_library(hairRemovalLib STATIC
-  HairRemoval/cuda_error.cuh
-  HairRemoval/entropyThreshold.cu
-  HairRemoval/entropyThreshold.cuh
-  HairRemoval/hairRemoval.cu
-  HairRemoval/hairRemoval.cuh
-  HairRemoval/hairRemovalEngine.cu
-  HairRemoval/hairRemovalEngine.cuh
-  HairRemoval/hairRemovalStruct.h
-  HairRemoval/timer.cuh
-  HairRemoval/parameters.h
-  HairRemoval/Source.cpp
-  HairRemoval/utils.h
-  )
+file(GLOB hairRemovalLib STATIC
+  "HairRemoval/*.h"
+  "HairRemoval/*.cpp"
+  "HairRemoval/*.cuh"
+  "HairRemoval/*.cu"
+)
 
-target_compile_features(hairRemovalLib PUBLIC cxx_std_17)
-add_executable(hairR HairRemoval/Source.cpp)
+add_executable(hairRemoval ${hairRemovalLib})
 
-# Using Cufft
-include_directories("/usr/local/cuda/include")
-# link_directories("/usr/local/cuda/lib")
-# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lcufft")
+find_package(CUDA REQUIRED)
+if (CUDA_FOUND)
+  message("Find CUDA")
+  include_directories(${CUFFT_INCLUDE_DIRS})
+  # link_directories("/usr/local/cuda/lib")
+  # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lcufft")
+else(CUDA_FOUND)
+  message("CUDA is not installed on this system.")
+endif()
 
-# Using OpenCV Lib
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    message("Find OpenMp")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+endif()
+
 find_package( OpenCV REQUIRED )
 include_directories( ${OpenCV_INCLUDE_DIRS} )
-target_link_libraries( hairR ${OpenCV_LIBS} ${CUDA_CUFFT_LIBRARIES} hairRemovalLib cufft)
+
+target_link_libraries( hairRemoval ${OpenCV_LIBS} cufft)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
