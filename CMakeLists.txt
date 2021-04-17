@@ -26,12 +26,15 @@ add_library(hairRemovalLib STATIC
 target_compile_features(hairRemovalLib PUBLIC cxx_std_17)
 add_executable(hairR HairRemoval/Source.cpp)
 
+# Using Cufft
+include_directories("/usr/local/cuda/include")
+# link_directories("/usr/local/cuda/lib")
+# set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lcufft")
+
 # Using OpenCV Lib
-SET("OpenCV_DIR" "C:\\opencv\\build\\x64\\vc15\\lib\\")
-SET("CUDA_CUFFT_LIBRARIES" "C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v10.2\\lib\\x64\\cufft.lib")
 find_package( OpenCV REQUIRED )
 include_directories( ${OpenCV_INCLUDE_DIRS} )
-target_link_libraries( hairR ${OpenCV_LIBS} ${CUDA_CUFFT_LIBRARIES} hairRemovalLib)
+target_link_libraries( hairR ${OpenCV_LIBS} ${CUDA_CUFFT_LIBRARIES} hairRemovalLib cufft)
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})

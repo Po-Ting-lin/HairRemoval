@@ -229,9 +229,11 @@ int EntropyBasedThreshold::_entropyThesholdingGPU() {
     h_eC = (float*)malloc(dynamic_range * sizeof(float*));
     h_AC = (float*)malloc(dynamic_range * sizeof(float*));
 
-    for (int i = 0, int j = dynamic_range * dynamic_range - 1; i < dynamic_range * dynamic_range; i++, j--) {
+    {int j = dynamic_range * dynamic_range - 1;
+    for (int i = 0; i < dynamic_range * dynamic_range; i++) {
         h_reversed_data[j] = h_data[i];
-    }
+        j--;
+    }}
 
     // device
     gpuErrorCheck(cudaMalloc((void**)&d_data, dynamic_range * dynamic_range * sizeof(float)));
@@ -275,14 +277,16 @@ int EntropyBasedThreshold::_entropyThesholdingGPU() {
 
     float min_value = FLT_MAX;
     int min_t = -1;
-    for (int i = 0, int j = dynamic_range - 1; i < dynamic_range; i++, j--) {
+    {int j = dynamic_range - 1;
+    for (int i = 0; i < dynamic_range; i++) {
         h_AC[i] = h_eA[i] + h_eC[j];
         //printf("i: %d, A:%f, C: %f, AC: %f\n", i, h_eA[i], h_eC[j], h_AC[i]);
         if (h_AC[i] < min_value) {
             min_t = i;
             min_value = h_AC[i];
         }
-    }
+        j--;
+    }}
     gpuErrorCheck(cudaFree(d_data));
     gpuErrorCheck(cudaFree(d_reversed_data));
     gpuErrorCheck(cudaFree(d_pA));

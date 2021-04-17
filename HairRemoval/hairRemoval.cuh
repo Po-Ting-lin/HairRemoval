@@ -1,6 +1,6 @@
 #pragma once
 #include <omp.h>
-#include <cuFFT.h>
+#include <cufft.h>
 #include "utils.h"
 #include "parameters.h"
 #include "hairRemovalStruct.h"
