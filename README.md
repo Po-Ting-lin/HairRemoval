@@ -1,21 +1,19 @@
 Welcome to collaborate and optimize this repo!
 
 ## HairRemoval
-* hair detection
-
 Implementation of hair removal in CUDA. The methods of hair detection refer to the paper[1][2].
-
-
-Three versions of hair detection with their performance, respectively.  
-![](/sample/time.png)
-
-* hair inpainting
 
 ### Requirements
 * OpenCV 4.2.0
 * CUDA 10.2
 
-## Demo  
+## Test Result  
+
+Method            |Image Size     | Elapsed Time
+------------------|:-------------:|--------------
+Naive             |1.2 Megapixels |  18789 ms
+GPU, OpenMp, AVX  |1.2 Megapixels |  325 ms
+
 * image  
 ![](/sample/test2.png)
 
