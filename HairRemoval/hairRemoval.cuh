@@ -1,5 +1,4 @@
 #pragma once
-#include <omp.h>
 #include <cufft.h>
 #include "utils.h"
 #include "parameters.h"
@@ -7,8 +6,9 @@
 #include "cuda_error.cuh"
 #include "timer.cuh"
 #include "hairRemovalEngine.cuh"
-
-
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 class HairRemoval {
 public:
@@ -35,7 +35,7 @@ private:
 	void _normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, float* dstMask, float* dstMaskImage, HairInpaintInfo info);
 	void _hairInpaintingGPU(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info);
 	void _hairInpaintingCPU(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info);
-	void _PDEHeatDiffusionCPU(float* normalized_mask, float* normalized_masked_src, float* dst, int ch, HairInpaintInfo info);
+	void _pdeHeatDiffusionCPU(float* normalized_mask, float* normalized_masked_src, float* dst, int ch, HairInpaintInfo info);
 	void _convertToMatArrayFormat(float* srcImage, uchar* dstImage, HairInpaintInfo info);
 };
 

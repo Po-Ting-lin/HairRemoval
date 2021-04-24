@@ -491,11 +491,11 @@ void HairRemoval::_hairInpaintingGPU(float* normalized_mask, float* normalized_m
 void HairRemoval::_hairInpaintingCPU(float* normalized_mask, float* normalized_masked_src, float*& dst, HairInpaintInfo info) {
     float* img_u = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
     memcpy(img_u, normalized_masked_src, info.NumberOfC3Elements * sizeof(float));
-    _PDEHeatDiffusionCPU(normalized_mask, normalized_masked_src, img_u, info.Channels, info);
+    _pdeHeatDiffusionCPU(normalized_mask, normalized_masked_src, img_u, info.Channels, info);
     dst = img_u;
 }
 
-void HairRemoval::_PDEHeatDiffusionCPU(float* normalized_mask, float* normalized_masked_src, float* dst, int ch, HairInpaintInfo info) {
+void HairRemoval::_pdeHeatDiffusionCPU(float* normalized_mask, float* normalized_masked_src, float* dst, int ch, HairInpaintInfo info) {
     int x_boundary = info.Width - 1;
     for (int i = 0; i < info.Iters; i++) {
         for (int k = 0; k < ch; k++) {

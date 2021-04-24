@@ -1,6 +1,5 @@
 #pragma once
 #include <string>
-#include <immintrin.h>
 #include <opencv2/opencv.hpp>
 
 #if defined(__AVX__) && defined(__AVX2__)
@@ -8,6 +7,7 @@
 #endif
 
 #if ISAVX
+#include <immintrin.h>
 #define SET8F(a) _mm256_set1_ps(a)
 #define SET8FE(a, b, c, d, e, f, g, i) _mm256_set_ps(a, b, c, d, e, f, g, i)
 #define MUL8F(a, b) _mm256_mul_ps(a, b)

@@ -75,7 +75,7 @@ public:
 
 	HairInpaintInfo(int width, int height, int channels, bool isGPU) {
 		RescaleFactor = 1;
-		Iters = 1000;
+		Iters = 500;
 		Width = width / RescaleFactor;
 		Height = height / RescaleFactor;
 		Channels = channels;
