@@ -6,6 +6,7 @@
 # Customized
 **.vscode
 build/**
+goodSample/**
 **.vcxproj
 **.vcxproj.filters
 **.sln

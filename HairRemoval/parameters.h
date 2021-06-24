@@ -43,7 +43,7 @@ public:
 		MinArea = 10;
 		Alpha = 1.4f;
 		Beta = 0.5f;
-		HairWidth = 4.0f;
+		HairWidth = 5.0f;
 		RatioBBox = 4.0f;
 		SigmaX = 8.0f * (sqrt(2.0 * log(2) / CV_PI)) * HairWidth / Alpha / Beta / CV_PI;
 		SigmaY = 0.8f * SigmaX;

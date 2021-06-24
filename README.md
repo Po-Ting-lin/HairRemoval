@@ -14,14 +14,14 @@ Method            |Image Size     | Elapsed Time
 Naive             |1.2 Megapixels |  18789 ms
 GPU, OpenMp, AVX  |1.2 Megapixels |  325 ms
 
-<!-- * image  
-![](/sample/test2.png)
+* image  
+![](/sample/test.jpg)
 
 * mask  
-![](/sample/test_mask2.png)
+![](/sample/result.png)
 
 * result    
-![](/sample/result2.png) -->
+![](/sample/result2.png)
 
 ## References
 

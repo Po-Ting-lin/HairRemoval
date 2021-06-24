@@ -24,7 +24,7 @@ void HairRemoval::Process(cv::Mat& src, cv::Mat& dst) {
 #endif
     //_cleanIsolatedComponent(mask, hair_detection_info);
     cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3), cv::Point(-1, -1));
-    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 2);
+    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 1);
 #if L2_TIMER
     auto t4 = getTime();
 #endif
@@ -469,13 +469,13 @@ void HairRemoval::_hairInpaintingGPU(float* normalized_mask, float* normalized_m
     gpuErrorCheck(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice));
 
     for (int i = 0; i < info.Iters; i++) {
-        //pdeHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
-        if (i % 2 == 0) {
-            pdeHeatDiffusionSMEM << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
-        }
-        else {
-            pdeHeatDiffusionSMEM2 << <grid2, block2 >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
-        }
+        pdeHeatDiffusion << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
+        //if (i % 2 == 0) {
+        //    pdeHeatDiffusionSMEM << <grid, block >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
+        //}
+        //else {
+        //    pdeHeatDiffusionSMEM2 << <grid2, block2 >> > (d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp, info.Width, info.Height, info.Channels);
+        //}
     }
     gpuErrorCheck(cudaDeviceSynchronize());
 

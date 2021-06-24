@@ -5,7 +5,7 @@
 int main() {
 	warmup();
 	cv::Mat src, dst;
-	src = cv::imread(R"(../sample/demo1280.png)");
+	src = cv::imread(R"(../sample/test.jpg)");
 	if (!src.data) {
 		std::cout << "Error: the image wasn't correctly loaded." << std::endl;
 		return -1;
@@ -28,7 +28,7 @@ int main() {
 #endif
 	/*******************************************************/
 	displayImage(dst, "output", false);
-	//cv::imwrite("result.png", dst);
+	cv::imwrite("result.png", dst);
 
 	src.release();
 	dst.release();
