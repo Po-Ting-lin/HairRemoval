@@ -17,11 +17,8 @@ GPU, OpenMp, AVX  |1.2 Megapixels |  325 ms
 * image  
 ![](/sample/test.jpg)
 
-* mask  
-![](/sample/result.png)
-
 * result    
-![](/sample/result2.png)
+![](/sample/result.png)
 
 ## References
 
