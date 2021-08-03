@@ -13,12 +13,8 @@ Method            |Image Size     | Elapsed Time
 ------------------|:-------------:|--------------
 Naive             |1.2 Megapixels |  18789 ms
 GPU, OpenMp, AVX  |1.2 Megapixels |  325 ms
-
-* image  
-![](/sample/test.jpg)
-
-* result    
-![](/sample/result.png)
+  
+![](/sample/1.jpg)
 
 ## References
 
