@@ -1,6 +1,6 @@
 #include "hairRemovalEngine.cuh"
 
-__global__ void extractLChannelWithInstrinicFunction(uchar* src, float* dst, int nx, int ny, int nz) {
+__global__ void extractLChannelKernel(uchar* src, float* dst, int nx, int ny, int nz) {
     int x = threadIdx.x + TILE_DIM * blockIdx.x;
     int y = threadIdx.y + TILE_DIM * blockIdx.y;
 
@@ -106,218 +106,89 @@ __global__ void cubeReductionKernel(float* d_Src, uchar* d_Dst, int fftH, int ff
     }
 }
 
-__global__ void preSumXMatrixKernel(float* src, int nx, int raw_width, int new_width) {
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int diff = raw_width - new_width;
-    if (x < raw_width && y < raw_width) {
-        if ((x < new_width) && (x >= new_width - diff)) {
-            src[y * nx + x] += src[y * nx + x + diff];
+__global__ void pdeHeatDiffusionSMEMKernel(float* mask, float* src, float* dst, int width, int height) {
+    __shared__ float smem[(BlockDim_x + 2) * Step][(BlockDim_y + 2) * Step];
+    const int x = blockIdx.x * Step * BlockDim_x + threadIdx.x - BlockDim_x;
+    const int y = blockIdx.y * Step * BlockDim_y + threadIdx.y - BlockDim_y;;
+
+    // locate at each block (a thread block map into src pointer)
+    dst += y * width + x;
+    src += y * width + x;
+
+    // put into active space
+    for (int yy = 1; yy < 1 + Step; yy++) {
+        for (int xx = 1; xx < 1 + Step; xx++) {
+            smem[yy * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x]
+                = dst[yy * BlockDim_y * width + xx * BlockDim_x];
         }
     }
-}
 
-__global__ void preSumYMatrixKernel(float* src, int nx, int raw_width, int new_width) {
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int diff = raw_width - new_width;
-    if (x < raw_width && y < raw_width) {
-        if ((x < new_width && y < new_width) && (y >= new_width - diff)) {
-            src[y * nx + x] += src[(y + diff) * nx + x];
-        }
+    // corner space
+    smem[threadIdx.y][threadIdx.x] = dst[1 * BlockDim_y * width + 1 * BlockDim_x];
+    smem[threadIdx.y][(1 + Step) * BlockDim_x + threadIdx.x] = dst[1 * BlockDim_y * width + Step * BlockDim_x];
+    smem[(1 + Step) * BlockDim_y + threadIdx.y][threadIdx.x] = dst[Step * BlockDim_y * width + 1 * BlockDim_x];
+    smem[(1 + Step) * BlockDim_y + threadIdx.y][(1 + Step) * BlockDim_x + threadIdx.x] = dst[Step * BlockDim_y * width + Step * BlockDim_x];
+
+    // put into left space
+    for (int yy = 1; yy < Step + 1; yy++) {
+        //if (y < height - BlockDim_y * (1 + Step) && y >= 0)
+        //    printf("%d - %d\n", y + yy * BlockDim_y, x);
+        smem[yy * BlockDim_y + threadIdx.y][threadIdx.x] 
+            = (x >= 0) ? dst[yy * BlockDim_y * width] : 0;
     }
-}
 
-__global__ void sumMatirxKernel(float* src, int nx, int multiple_width, float* d_sum_matrix) {
-    __shared__ float smem[TILE_DIM][TILE_DIM];
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-
-    if (x < multiple_width && y < multiple_width) {
-        if (multiple_width < blockDim.x) {
-            if (threadIdx.x >= multiple_width || threadIdx.y >= multiple_width) {
-                smem[threadIdx.y][threadIdx.x] = 0.0f;
-            }
-            else {
-                smem[threadIdx.y][threadIdx.x] = src[y * nx + x];
-            }
-        }
-        else {
-            smem[threadIdx.y][threadIdx.x] = src[y * nx + x];
-        }
-
-        __syncthreads();
-
-        for (int offx = blockDim.x / 2; offx > 0; offx /= 2) {
-            if (threadIdx.x < offx) {
-                smem[threadIdx.y][threadIdx.x] += smem[threadIdx.y][threadIdx.x + offx];
-
-                __syncthreads();
-
-                if (threadIdx.y < offx) {
-                    smem[threadIdx.y][threadIdx.x] += smem[threadIdx.y + offx][threadIdx.x];
-                }
-            }
-            __syncthreads();
-        }
-
-        if (threadIdx.x == 0 && threadIdx.y == 0) {
-            d_sum_matrix[blockIdx.y * gridDim.x + blockIdx.x] = smem[threadIdx.y][threadIdx.x];
-            //printf("x: %d, y: %d -- %f\n", blockIdx.x, blockIdx.y, sum[blockIdx.y * gridDim.x + blockIdx.x]);
-        }
+    // put into right space
+    for (int yy = 1; yy < Step + 1; yy++) {
+        smem[yy * BlockDim_y + threadIdx.y][(1 + Step) * BlockDim_x + threadIdx.x]
+            = (x < width - (1 + Step) * BlockDim_x) ? dst[yy * BlockDim_y * width + (1 + Step) * BlockDim_x] : 0;
     }
-}
 
-__global__ void sumSumMatrixKernel(float* sum_matrix, float* d_pA, int sum_matrix_size, int threshold) {
-    extern __shared__ float smem[];
-    int tid = threadIdx.x;
-
-    // put the data in that block from DRAM to shared memory
-    if (tid < sum_matrix_size) {
-        smem[tid] = sum_matrix[tid];
+    // put into top space
+    for (int xx = 1; xx < Step + 1; xx++) {
+        smem[threadIdx.y][xx * BlockDim_x + threadIdx.x]
+            = (y >= 0) ? dst[xx * BlockDim_x] : 0;
     }
-    else {
-        smem[tid] = 0.0f;
+
+    // put into bottom space
+    for (int xx = 1; xx < Step + 1; xx++) {
+        smem[(1 + Step) * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x]
+            = (y < height - (1 + Step) * BlockDim_y) ? dst[(1 + Step) * BlockDim_y * width + xx * BlockDim_x] : 0;
     }
     __syncthreads();
 
-    // unrolling warp
-    if (tid < 32) {
-        volatile float* vsmem = smem;
-        vsmem[tid] += vsmem[tid + 32];
-        vsmem[tid] += vsmem[tid + 16];
-        vsmem[tid] += vsmem[tid + 8];
-        vsmem[tid] += vsmem[tid + 4];
-        vsmem[tid] += vsmem[tid + 2];
-        vsmem[tid] += vsmem[tid + 1];
-    }
 
-    if (tid == 0) {
-        d_pA[threshold] = (float)(smem[0]);
-    }
-}
-
-__global__ void multiplyRCKernel(float* d_data_rc, float* d_data, int nx, bool reversed) {
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int cx = reversed ? nx - x - 1 : x;
-    int cy = reversed ? nx - y - 1 : y;
-
-    if (x < nx && y < nx) {
-        d_data_rc[y * nx + x] = d_data[y * nx + x] * cx * cy;
+    for (int yy = 1; yy < 1 + Step; yy++) {
+        for (int xx = 1; xx < 1 + Step; xx++) {
+            int index = yy * BlockDim_y * width + xx * BlockDim_x;
+            float center = smem[yy * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x];
+            dst[index] =
+                center + 0.2f * (
+                  smem[yy * BlockDim_y + threadIdx.y + 1][xx * BlockDim_x + threadIdx.x]
+                + smem[yy * BlockDim_y + threadIdx.y - 1][xx * BlockDim_x + threadIdx.x]
+                + smem[yy * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x + 1]
+                + smem[yy * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x - 1]
+                - 4.0f * center)
+                - 0.2f * mask[index] * (center - src[index]);
+        }
     }
 }
 
-__global__ void dividePArrayKernel(float* d_p, float* d_m, int size) {
-    int tid = threadIdx.x;
-    if (tid < size) {
-        d_m[tid] = __fdividef(d_m[tid], d_p[tid]);
-    }
-}
+__global__ void pdeHeatDiffusionKernel(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
+    const int x = threadIdx.x + blockDim.x * blockIdx.x;
+    const int y = threadIdx.y + blockDim.y * blockIdx.y;
+    const int z = threadIdx.z + blockDim.z * blockIdx.z;
+    if (x < 0 || y < 0 || x >= width || y >= height || z >= ch) return;
 
-__global__ void computeEntropyMatrixKernel(float* d_data_computed, float* d_data, int nx, float* d_mA, int threshold, bool reversed) {
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int cx = reversed ? nx - x - 1 : x;
-    int cy = reversed ? nx - y - 1 : y;
-
-    if (x < nx && y < nx) {
-        float meanA = d_mA[threshold];
-        float p = d_data[y * nx + x];
-        float value = p * cx * cy * log2f(((float)cx * cy + EPSILON) / (meanA + EPSILON));
-        value += meanA * p * log2f(meanA / ((float)cx + EPSILON) / ((float)cy + EPSILON) + EPSILON);
-        d_data_computed[y * nx + x] = value;
-    }
-}
-
-__global__ void reversedDataKernel(float* d_data, float* d_reversed_data, int nx) {
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int rx = nx - x - 1;
-    int ry = nx - y - 1;
-
-    if (x < nx && y < nx) {
-        d_reversed_data[ry * nx + rx] = d_data[y * nx + x];
-    }
-}
-
-__global__ void pdeHeatDiffusionSMEM(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
-    __shared__ float smem[TILE_DIM][TILE_DIM];
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int z = threadIdx.z + blockDim.z * blockIdx.z;
-    if (x < 0 || y < 0 || x >= width || y >= height) return;
-
-    int c3i = z * width * height + y * width + x;
-    smem[threadIdx.y][threadIdx.x] = tempSrc[c3i];
-
-    __syncthreads();
-
-    float center = smem[threadIdx.y][threadIdx.x];
-
-    float tmp = 0.0f;
-    float count = 0.0f;
-
-    if (threadIdx.y - 1 > -1) {
-        tmp += smem[threadIdx.y - 1][threadIdx.x]; count++;
-    }
-    if (threadIdx.y + 1 < TILE_DIM) {
-        tmp += smem[threadIdx.y + 1][threadIdx.x]; count++;
-    }
-    if (threadIdx.x - 1 > -1) {
-        tmp += smem[threadIdx.y][threadIdx.x - 1]; count++;
-    }
-    if (threadIdx.x + 1 < TILE_DIM) {
-        tmp += smem[threadIdx.y][threadIdx.x + 1]; count++;
-    }
-    tempSrc[c3i] = fmaf(-0.2f, fmaf(count, center, fmaf(mask[y * width + x], (center - src[c3i]), -tmp)), center);
-}
-
-__global__ void pdeHeatDiffusionSMEM2(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
-    __shared__ float smem[TILE_DIM2][TILE_DIM2];
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int z = threadIdx.z + blockDim.z * blockIdx.z;
-    if (x < 0 || y < 0 || x >= width || y >= height) return;
-
-    int c3i = z * width * height + y * width + x;
-    smem[threadIdx.y][threadIdx.x] = tempSrc[c3i];
-
-    __syncthreads();
-
-    float center = smem[threadIdx.y][threadIdx.x];
-    float tmp = 0.0f;
-    float count = 0.0f;
-
-    if (threadIdx.y - 1 > -1) {
-        tmp = tmp + smem[threadIdx.y - 1][threadIdx.x]; count++;
-    }
-    if (threadIdx.y + 1 < TILE_DIM2) {
-        tmp = tmp + smem[threadIdx.y + 1][threadIdx.x]; count++;
-    }
-    if (threadIdx.x - 1 > -1) {
-        tmp = tmp + smem[threadIdx.y][threadIdx.x - 1]; count++;
-    }
-    if (threadIdx.x + 1 < TILE_DIM2) {
-        tmp = tmp + smem[threadIdx.y][threadIdx.x + 1]; count++;
-    }
-    tempSrc[c3i] = fmaf(-0.2f, fmaf(count, center, fmaf(mask[y * width + x], (center - src[c3i]), -tmp)), center);
-}
-
-__global__ void pdeHeatDiffusion(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
-    int x = threadIdx.x + blockDim.x * blockIdx.x;
-    int y = threadIdx.y + blockDim.y * blockIdx.y;
-    int z = threadIdx.z + blockDim.z * blockIdx.z;
-    if (x < 1 || y < 1 || x >= width - 1 || y >= height - 1 || z >= ch) return;
-
-    int ch_offset = z * width * height;
-    int c3i = ch_offset + y * width + x;
-    float center = tempSrc[c3i];
-    tempSrc[c3i] = center
-        + 0.2f * (tempSrc[ch_offset + (y - 1) * width + x]
-            + tempSrc[ch_offset + (y + 1) * width + x]
-            + tempSrc[ch_offset + y * width + (x - 1)]
-            + tempSrc[ch_offset + y * width + (x + 1)]
-            - 4.0f * center)
-        - 0.2f * mask[y * width + x] * (center - src[c3i]);
+    src += z * width * height;
+    tempSrc += z * width * height;
+    float center = tempSrc[y * width + x];
+    int i = y * width + x;
+    tempSrc[i] = center
+        + 0.2f 
+        * (tempSrc[max(0, y - 1) * width + x]
+        + tempSrc[min(height - 1, y + 1) * width + x]
+        + tempSrc[y * width + max(0, x - 1)]
+        + tempSrc[y * width + min(width - 1, x + 1)]
+        - 4.0f * center)
+        - 0.2f * mask[i] * (center - src[i]);
 }

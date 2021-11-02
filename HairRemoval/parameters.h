@@ -34,7 +34,9 @@ public:
 	float RatioBBox;
 	float SigmaX;
 	float SigmaY;
+	double ExceedTime;
 
+	HairDetectionInfo() {}
 	HairDetectionInfo(int width, int height, int channels, bool isGPU) {
 		Width = width;
 		Height = height;
@@ -53,6 +55,7 @@ public:
 		KernelX = KernelRadius;
 		KernelY = KernelRadius;
 		IsGPU = isGPU;
+		ExceedTime = 0.0;
 	}
 };
 
@@ -73,6 +76,7 @@ public:
 	float Dt;
 	float Cw;
 
+	HairInpaintInfo() {}
 	HairInpaintInfo(int width, int height, int channels, bool isGPU) {
 		RescaleFactor = 1;
 		Iters = 500;
