@@ -1,10 +1,16 @@
 #pragma once
-#define TILE_DIM 32
-#define TILE_DIM2 21
-#define BLOCK_DIM 8
+#define DETECT_TILE_X 32
+#define DETECT_TILE_Y 32
+#define DETECT_UNROLL_Y 4
+#define INPAINT_TILE_X 64
+#define INPAINT_TILE_Y 32
+#define INPAINT_UNROLL_Y 4
+#define INPAINT_SMEM_TILE_X 8
+#define INPAINT_SMEM_TILE_Y 8
+#define STEP 8
+#define PAD_STEP 1
+
 #define EPSILON 1e-8
-#define D_NUM_STREAMS 6
-#define E_NUM_STREAMS 15
 #define DYNAMICRANGE 256
 #define POWER_OF_TWO 1
 #define LOAD_FLOAT(i) d_Src[i]
@@ -17,7 +23,6 @@
 
 class HairDetectionInfo {
 public:
-	bool IsGPU;
 	int Width;
 	int Height;
 	int Channels;
@@ -28,16 +33,17 @@ public:
 	int KernelH;
 	int KernelX;
 	int KernelY;
+	int FFTW;
+	int FFTH;
 	float Alpha;
 	float Beta;
 	float HairWidth;
 	float RatioBBox;
 	float SigmaX;
 	float SigmaY;
-	double ExceedTime;
 
 	HairDetectionInfo() {}
-	HairDetectionInfo(int width, int height, int channels, bool isGPU) {
+	HairDetectionInfo(int width, int height, int channels) {
 		Width = width;
 		Height = height;
 		Channels = channels;
@@ -54,43 +60,31 @@ public:
 		KernelH = 2 * KernelRadius + 1;
 		KernelX = KernelRadius;
 		KernelY = KernelRadius;
-		IsGPU = isGPU;
-		ExceedTime = 0.0;
+		FFTH = snapTransformSize(Height + KernelH - 1);
+		FFTW = snapTransformSize(Width + KernelW - 1);
 	}
 };
 
 class HairInpaintInfo {
 public:
-	bool IsGPU;
-	int RescaleFactor;
 	int Width;
 	int Height;
 	int Channels;
-	int MixGpuChannels;
 	int NumberOfC1Elements;
 	int NumberOfC3Elements;
-	int NumberOfC2Elements;
 	int Iters;
 	int* MinRgb;
 	int* MaxRgb;
-	float Dt;
-	float Cw;
 
 	HairInpaintInfo() {}
-	HairInpaintInfo(int width, int height, int channels, bool isGPU) {
-		RescaleFactor = 1;
+	HairInpaintInfo(int width, int height, int channels) {
 		Iters = 500;
-		Width = width / RescaleFactor;
-		Height = height / RescaleFactor;
+		Width = width;
+		Height = height;
 		Channels = channels;
-		MixGpuChannels = 2;
-		Dt = 0.1f;
-		Cw = 4.0f;
 		MinRgb = new int[3] { 255, 255, 255};
 		MaxRgb = new int[3] { 0, 0, 0};
-		NumberOfC1Elements = width * height / RescaleFactor / RescaleFactor;
-		NumberOfC2Elements = width * height * 2 / RescaleFactor / RescaleFactor;
-		NumberOfC3Elements = width * height * channels / RescaleFactor / RescaleFactor;
-		IsGPU = isGPU;
+		NumberOfC1Elements = width * height;
+		NumberOfC3Elements = width * height * channels;
 	}
 };

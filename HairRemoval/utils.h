@@ -112,11 +112,6 @@ static void printTime(std::chrono::system_clock::time_point t1, std::chrono::sys
     std::cout << name << " time consume: " << time_lapse.count() << " s" << std::endl;
 }
 
-static void printTime(std::chrono::system_clock::time_point t1, std::chrono::system_clock::time_point t2, std::string name, double correction) {
-    std::chrono::duration<double> time_lapse = t2 - t1;
-    std::cout << name << " time consume: " << time_lapse.count() - correction << " s" << std::endl;
-}
-
 static void displayImage(float* src, int width, int height, bool mag) {
     cv::Mat Out(height, width, CV_32F, src, width * sizeof(float));
     cv::Mat Out2(height, width, CV_8U);

@@ -16,18 +16,14 @@ int main() {
 	}
 	//displayImage(src, "src", false);
 	/*******************************************************/
-	bool isGPU = true;
+	HairRemoval hr(src.cols, src.rows, src.channels());
 #if L1_TIMER
 	auto start = getTime();
 #endif
-	const int width = src.cols;
-	const int height = src.rows;
-	const int channel = src.channels();
-	HairRemoval hr(width, height, channel, isGPU);
 	hr.Process(src, dst);
 #if L1_TIMER
 	auto end = getTime();
-	printTime(start, end, "total time consume: ", hr.GetExceedTime());
+	printTime(start, end, "total time consume: ");
 #endif
 	/*******************************************************/
 	displayImage(dst, "output", false);

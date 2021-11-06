@@ -1,10 +1,10 @@
 #include "hairRemovalEngine.cuh"
 
 __global__ void extractLChannelKernel(uchar* src, float* dst, int nx, int ny, int nz) {
-    int x = threadIdx.x + TILE_DIM * blockIdx.x;
-    int y = threadIdx.y + TILE_DIM * blockIdx.y;
+    int x = threadIdx.x + DETECT_TILE_X * blockIdx.x;
+    int y = threadIdx.y + DETECT_TILE_Y * blockIdx.y;
 
-    for (int i = 0; i < TILE_DIM; i += BLOCK_DIM) {
+    for (int i = 0; i < DETECT_TILE_X; i += DETECT_TILE_Y / DETECT_UNROLL_Y) {
         // take pixel from DRAM
         uchar R = *(src + ((y + i) * nx * nz) + (x * nz) + 0);
         uchar G = *(src + ((y + i) * nx * nz) + (x * nz) + 1);
@@ -106,89 +106,89 @@ __global__ void cubeReductionKernel(float* d_Src, uchar* d_Dst, int fftH, int ff
     }
 }
 
-__global__ void pdeHeatDiffusionSMEMKernel(float* mask, float* src, float* dst, int width, int height) {
-    __shared__ float smem[(BlockDim_x + 2) * Step][(BlockDim_y + 2) * Step];
-    const int x = blockIdx.x * Step * BlockDim_x + threadIdx.x - BlockDim_x;
-    const int y = blockIdx.y * Step * BlockDim_y + threadIdx.y - BlockDim_y;;
+__global__ void pdeHeatDiffusionSMEMKernel(bool* mask, float* src, float* dst, int width, int height) {
+    __shared__ float smem[(INPAINT_SMEM_TILE_X + 2) * STEP][(INPAINT_SMEM_TILE_Y + 2) * STEP];
+    const int x = blockIdx.x * STEP * INPAINT_SMEM_TILE_X + threadIdx.x - INPAINT_SMEM_TILE_X;
+    const int y = blockIdx.y * STEP * INPAINT_SMEM_TILE_Y + threadIdx.y - INPAINT_SMEM_TILE_Y;;
 
     // locate at each block (a thread block map into src pointer)
     dst += y * width + x;
     src += y * width + x;
 
     // put into active space
-    for (int yy = 1; yy < 1 + Step; yy++) {
-        for (int xx = 1; xx < 1 + Step; xx++) {
-            smem[yy * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x]
-                = dst[yy * BlockDim_y * width + xx * BlockDim_x];
+    for (int yy = 1; yy < 1 + STEP; yy++) {
+        for (int xx = 1; xx < 1 + STEP; xx++) {
+            smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
+                = dst[yy * INPAINT_SMEM_TILE_Y * width + xx * INPAINT_SMEM_TILE_X];
         }
     }
 
     // corner space
-    smem[threadIdx.y][threadIdx.x] = dst[1 * BlockDim_y * width + 1 * BlockDim_x];
-    smem[threadIdx.y][(1 + Step) * BlockDim_x + threadIdx.x] = dst[1 * BlockDim_y * width + Step * BlockDim_x];
-    smem[(1 + Step) * BlockDim_y + threadIdx.y][threadIdx.x] = dst[Step * BlockDim_y * width + 1 * BlockDim_x];
-    smem[(1 + Step) * BlockDim_y + threadIdx.y][(1 + Step) * BlockDim_x + threadIdx.x] = dst[Step * BlockDim_y * width + Step * BlockDim_x];
+    smem[threadIdx.y][threadIdx.x] = dst[1 * INPAINT_SMEM_TILE_Y * width + 1 * INPAINT_SMEM_TILE_X];
+    smem[threadIdx.y][(1 + STEP) * INPAINT_SMEM_TILE_X + threadIdx.x] = dst[1 * INPAINT_SMEM_TILE_Y * width + STEP * INPAINT_SMEM_TILE_X];
+    smem[(1 + STEP) * INPAINT_SMEM_TILE_Y + threadIdx.y][threadIdx.x] = dst[STEP * INPAINT_SMEM_TILE_Y * width + 1 * INPAINT_SMEM_TILE_X];
+    smem[(1 + STEP) * INPAINT_SMEM_TILE_Y + threadIdx.y][(1 + STEP) * INPAINT_SMEM_TILE_X + threadIdx.x] = dst[STEP * INPAINT_SMEM_TILE_Y * width + STEP * INPAINT_SMEM_TILE_X];
 
     // put into left space
-    for (int yy = 1; yy < Step + 1; yy++) {
+    for (int yy = 1; yy < STEP + 1; yy++) {
         //if (y < height - BlockDim_y * (1 + Step) && y >= 0)
         //    printf("%d - %d\n", y + yy * BlockDim_y, x);
-        smem[yy * BlockDim_y + threadIdx.y][threadIdx.x] 
-            = (x >= 0) ? dst[yy * BlockDim_y * width] : 0;
+        smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][threadIdx.x] 
+            = (x >= 0) ? dst[yy * INPAINT_SMEM_TILE_Y * width] : 0;
     }
 
     // put into right space
-    for (int yy = 1; yy < Step + 1; yy++) {
-        smem[yy * BlockDim_y + threadIdx.y][(1 + Step) * BlockDim_x + threadIdx.x]
-            = (x < width - (1 + Step) * BlockDim_x) ? dst[yy * BlockDim_y * width + (1 + Step) * BlockDim_x] : 0;
+    for (int yy = 1; yy < STEP + 1; yy++) {
+        smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][(1 + STEP) * INPAINT_SMEM_TILE_X + threadIdx.x]
+            = (x < width - (1 + STEP) * INPAINT_SMEM_TILE_X) ? dst[yy * INPAINT_SMEM_TILE_Y * width + (1 + STEP) * INPAINT_SMEM_TILE_X] : 0;
     }
 
     // put into top space
-    for (int xx = 1; xx < Step + 1; xx++) {
-        smem[threadIdx.y][xx * BlockDim_x + threadIdx.x]
-            = (y >= 0) ? dst[xx * BlockDim_x] : 0;
+    for (int xx = 1; xx < STEP + 1; xx++) {
+        smem[threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
+            = (y >= 0) ? dst[xx * INPAINT_SMEM_TILE_X] : 0;
     }
 
     // put into bottom space
-    for (int xx = 1; xx < Step + 1; xx++) {
-        smem[(1 + Step) * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x]
-            = (y < height - (1 + Step) * BlockDim_y) ? dst[(1 + Step) * BlockDim_y * width + xx * BlockDim_x] : 0;
+    for (int xx = 1; xx < STEP + 1; xx++) {
+        smem[(1 + STEP) * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
+            = (y < height - (1 + STEP) * INPAINT_SMEM_TILE_Y) ? dst[(1 + STEP) * INPAINT_SMEM_TILE_Y * width + xx * INPAINT_SMEM_TILE_X] : 0;
     }
     __syncthreads();
 
 
-    for (int yy = 1; yy < 1 + Step; yy++) {
-        for (int xx = 1; xx < 1 + Step; xx++) {
-            int index = yy * BlockDim_y * width + xx * BlockDim_x;
-            float center = smem[yy * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x];
+    for (int yy = 1; yy < 1 + STEP; yy++) {
+        for (int xx = 1; xx < 1 + STEP; xx++) {
+            int index = yy * INPAINT_SMEM_TILE_Y * width + xx * INPAINT_SMEM_TILE_X;
+            float center = smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x];
             dst[index] =
                 center + 0.2f * (
-                  smem[yy * BlockDim_y + threadIdx.y + 1][xx * BlockDim_x + threadIdx.x]
-                + smem[yy * BlockDim_y + threadIdx.y - 1][xx * BlockDim_x + threadIdx.x]
-                + smem[yy * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x + 1]
-                + smem[yy * BlockDim_y + threadIdx.y][xx * BlockDim_x + threadIdx.x - 1]
+                  smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y + 1][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
+                + smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y - 1][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
+                + smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x + 1]
+                + smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x - 1]
                 - 4.0f * center)
                 - 0.2f * mask[index] * (center - src[index]);
         }
     }
 }
 
-__global__ void pdeHeatDiffusionKernel(float* mask, float* src, float* tempSrc, int width, int height, int ch) {
+__global__ void pdeHeatDiffusionKernel(bool* mask, float* src, float* tempSrc, int width, int height) {
     const int x = threadIdx.x + blockDim.x * blockIdx.x;
-    const int y = threadIdx.y + blockDim.y * blockIdx.y;
-    const int z = threadIdx.z + blockDim.z * blockIdx.z;
-    if (x < 0 || y < 0 || x >= width || y >= height || z >= ch) return;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    if (x < 0 || y < 0 || x >= width || y >= height / INPAINT_UNROLL_Y) return;
 
-    src += z * width * height;
-    tempSrc += z * width * height;
-    float center = tempSrc[y * width + x];
-    int i = y * width + x;
-    tempSrc[i] = center
-        + 0.2f 
-        * (tempSrc[max(0, y - 1) * width + x]
-        + tempSrc[min(height - 1, y + 1) * width + x]
-        + tempSrc[y * width + max(0, x - 1)]
-        + tempSrc[y * width + min(width - 1, x + 1)]
-        - 4.0f * center)
-        - 0.2f * mask[i] * (center - src[i]);
+#pragma unroll
+    for (; y < height; y += height / INPAINT_UNROLL_Y) {
+        float center = tempSrc[y * width + x];
+        int i = y * width + x;
+        tempSrc[i] = center
+            + 0.2f
+            * (tempSrc[max(0, y - 1) * width + x]
+                + tempSrc[min(height - 1, y + 1) * width + x]
+                + tempSrc[y * width + max(0, x - 1)]
+                + tempSrc[y * width + min(width - 1, x + 1)]
+                - 4.0f * center)
+            - 0.2f * mask[i] * (center - src[i]);
+    }
 }

@@ -19,10 +19,5 @@ __global__ void modulateAndNormalizeKernel(fComplex* d_Dst, fComplex* d_DataSrc,
 __global__ void cubeReductionKernel(float* d_Src, uchar* d_Dst, int fftH, int fftW, int dataH, int dataW, int depth);
 
 // hair inpainting
-#define BlockDim_x 8
-#define BlockDim_y 8
-#define Step 8
-#define PadStep 1
-
-__global__ void pdeHeatDiffusionSMEMKernel(float* mask, float* src, float* dst, int width, int height);
-__global__ void pdeHeatDiffusionKernel(float* mask, float* src, float* tempSrc, int width, int height, int ch);
+__global__ void pdeHeatDiffusionSMEMKernel(bool* mask, float* src, float* dst, int width, int height);
+__global__ void pdeHeatDiffusionKernel(bool* mask, float* src, float* tempSrc, int width, int height);
