@@ -14,7 +14,7 @@ HairRemoval::~HairRemoval() {
 }
 
 void HairRemoval::Process(cv::Mat& src, cv::Mat& dst) {
-    cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U, cv::Scalar(0));
+    cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U);
 #if L2_TIMER
     auto t1 = getTime();
 #endif
@@ -44,7 +44,6 @@ void HairRemoval::Process(cv::Mat& src, cv::Mat& dst) {
 #if PEEK_MASK
     displayImage(mask, "mask", false);
 #endif
-    gpuErrorCheck(cudaDeviceReset());
 }
 
 void HairRemoval::_hairDetection(cv::Mat& src, cv::Mat& dst) {
@@ -85,6 +84,7 @@ void HairRemoval::_hairDetection(cv::Mat& src, cv::Mat& dst) {
     // H to D
     gpuErrorCheck(cudaMemcpy(d_Kernel, h_kernels, info.KernelH * info.KernelW * info.NumberOfFilter * sizeof(float), cudaMemcpyHostToDevice));
     gpuErrorCheck(cudaMemcpy(d_src_ptr, src_ptr, src_byte_size, cudaMemcpyHostToDevice));
+    
     dim3 block(DETECT_TILE_X, DETECT_TILE_Y / DETECT_UNROLL_Y);
     dim3 grid(iDivUp(src.cols, DETECT_TILE_X), iDivUp(src.rows, DETECT_TILE_Y));
     extractLChannelKernel << < grid, block >> > (d_src_ptr, d_src_c_ptr, src.cols, src.rows, src.channels());

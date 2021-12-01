@@ -17,13 +17,22 @@ int main() {
 	//displayImage(src, "src", false);
 	/*******************************************************/
 	HairRemoval hr(src.cols, src.rows, src.channels());
+	const int iters = DEBUG || L2_TIMER ? 1 : 10;
+	double elapsed_avg_time = 0.0f;
+	std::cout << "Iterations: " << iters << std::endl;
+	for (int i = 0; i < iters; i++) {
 #if L1_TIMER
-	auto start = getTime();
+		auto t1 = getTime();
 #endif
-	hr.Process(src, dst);
+		hr.Process(src, dst);
 #if L1_TIMER
-	auto end = getTime();
-	printTime(start, end, "total time consume: ");
+		auto t2 = getTime();
+		std::chrono::duration<double> elapsed_seconds = t2 - t1;
+		elapsed_avg_time += elapsed_seconds.count();
+#endif
+	}
+#if L1_TIMER
+	std::cout << "Total time consume: " << elapsed_avg_time / iters * 1000.0 << " ms, in iterations " << iters << std::endl;
 #endif
 	/*******************************************************/
 	displayImage(dst, "output", false);
@@ -31,5 +40,6 @@ int main() {
 
 	src.release();
 	dst.release();
+	gpuErrorCheck(cudaDeviceReset());
 	return 0;
 }
