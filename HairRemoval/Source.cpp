@@ -2,9 +2,13 @@
 #include "warmup.cuh"
 #include "utils.h"
 
+// 82 ms 20220113 @1280x960
+// 71 ms 20220117 @1280x960 gpu histogram
+// 29 ms 20220117 @1280x960 inpainting iter unroll (launching a kernel is expensive)
+
 int main() {
 	warmup();
-	cv::Mat src, dst;
+	cv::Mat src;
 	src = cv::imread(R"(../sample/demo1280.png)");
 	if (!src.data) {
 		std::cout << "Error: the image wasn't correctly loaded." << std::endl;
@@ -14,6 +18,7 @@ int main() {
 		std::cout << "input image must be CV_8UC3! " << std::endl;
 		return false;
 	}
+	cv::Mat dst(cv::Size(src.cols, src.rows), CV_8UC3, cv::Scalar(0));
 	//displayImage(src, "src", false);
 	/*******************************************************/
 	HairRemoval hr(src.cols, src.rows, src.channels());
@@ -40,6 +45,6 @@ int main() {
 
 	src.release();
 	dst.release();
-	gpuErrorCheck(cudaDeviceReset());
+	Check(cudaDeviceReset());
 	return 0;
 }

@@ -1,14 +1,14 @@
 #include "hairRemovalEngine.cuh"
 
-__global__ void extractLChannelKernel(uchar* src, float* dst, int nx, int ny, int nz) {
+__global__ void extractLChannelKernel(uchar* src, float* dst, uchar* dst2, int nx, int ny, int nz) {
     int x = threadIdx.x + DETECT_TILE_X * blockIdx.x;
     int y = threadIdx.y + DETECT_TILE_Y * blockIdx.y;
 
     for (int i = 0; i < DETECT_TILE_X; i += DETECT_TILE_Y / DETECT_UNROLL_Y) {
         // take pixel from DRAM
-        uchar R = *(src + ((y + i) * nx * nz) + (x * nz) + 0);
-        uchar G = *(src + ((y + i) * nx * nz) + (x * nz) + 1);
-        uchar B = *(src + ((y + i) * nx * nz) + (x * nz) + 2);
+        uchar R = src[((y + i) * nx * nz) + (x * nz) + 0];
+        uchar G = src[((y + i) * nx * nz) + (x * nz) + 1];
+        uchar B = src[((y + i) * nx * nz) + (x * nz) + 2];
 
         // RGB to XYZ
         float r = fdividef((float)R, 255.0f);
@@ -24,7 +24,10 @@ __global__ void extractLChannelKernel(uchar* src, float* dst, int nx, int ny, in
         float L = fmaf(116.0f, Y, -16.0f) * 2.55f;
 
         // set pixel to DRAM
-        *(dst + (y + i) * nx + x) = L;
+        dst[(y + i) * nx + x] = L;
+        dst2[(y + i) * nx + x] = R;
+        dst2[(y + i) * nx + x + nx * ny] = G;
+        dst2[(y + i) * nx + x + 2 * nx * ny] = B;
     }
 }
 
@@ -106,6 +109,56 @@ __global__ void cubeReductionKernel(float* d_Src, uchar* d_Dst, int fftH, int ff
     }
 }
 
+__global__ void binarizeKernel(uchar* d_Src, int width, int height, int threshold) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) return;
+    d_Src[y * width + x] = d_Src[y * width + x] >= threshold ? MAX_DYNAMIC_VALUE : 0;
+}
+
+__global__ void NaiveDilationKernel(uchar* d_Src, bool* d_Dst, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) return;
+    if (d_Src[y * width + x] == MAX_DYNAMIC_VALUE) {
+        d_Dst[max(y - 1, 0) * width + x] = 1; // up
+        d_Dst[min(height - 1, y + 1) * width + x] = 1; // down
+        d_Dst[y * width + max(x - 1, 0)] = 1;  // left
+        d_Dst[y * width + min(width - 1, x + 1)] = 1; // right
+    }
+
+    __syncthreads();
+
+    if (d_Dst[y * width + x] == 1) {
+        d_Dst[max(y - 1, 0) * width + x] = 1; // up
+        d_Dst[min(height - 1, y + 1) * width + x] = 1; // down
+        d_Dst[y * width + max(x - 1, 0)] = 1;  // left
+        d_Dst[y * width + min(width - 1, x + 1)] = 1; // right
+    }
+}
+
+__global__ void makeMaskSrcImageKernel(uchar* src, bool* mask, float* maskedSrc, float max, float min, int size) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= size) return;
+    float value = ((float)src[i] - min) / (max - min);
+    maskedSrc[i] = mask[i] ? 1.0f : value;
+}
+
+__global__ void make8UDstKernel(float* src, uchar* dst, float maxR, float minR, float maxG, float minG, float maxB, float minB, int width, int height) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) return;
+    dst[(y * width * 3) + (x * 3) + 0] = (uchar)(src[y * width + x] * (maxR - minR) + minR);
+    dst[(y * width * 3) + (x * 3) + 1] = (uchar)(src[y * width + x + width * height] * (maxG - minG) + minG);
+    dst[(y * width * 3) + (x * 3) + 2] = (uchar)(src[y * width + x + width * height * 2] * (maxB - minB) + minB);
+}
+
+__global__ void NotKernel(bool* mask, int size) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= size) return;
+    mask[i] = !mask[i];
+}
+
 __global__ void pdeHeatDiffusionSMEMKernel(bool* mask, float* src, float* dst, int width, int height) {
     __shared__ float smem[(INPAINT_SMEM_TILE_X + 2) * STEP][(INPAINT_SMEM_TILE_Y + 2) * STEP];
     const int x = blockIdx.x * STEP * INPAINT_SMEM_TILE_X + threadIdx.x - INPAINT_SMEM_TILE_X;
@@ -177,18 +230,21 @@ __global__ void pdeHeatDiffusionKernel(bool* mask, float* src, float* tempSrc, i
     const int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     if (x < 0 || y < 0 || x >= width || y >= height / INPAINT_UNROLL_Y) return;
-
+    float center;
+    int i;
+    for (int k = 0; k < INPAINT_ITER_UNROLL; k++) {
 #pragma unroll
-    for (; y < height; y += height / INPAINT_UNROLL_Y) {
-        float center = tempSrc[y * width + x];
-        int i = y * width + x;
-        tempSrc[i] = center
-            + 0.2f
-            * (tempSrc[max(0, y - 1) * width + x]
-                + tempSrc[min(height - 1, y + 1) * width + x]
-                + tempSrc[y * width + max(0, x - 1)]
-                + tempSrc[y * width + min(width - 1, x + 1)]
-                - 4.0f * center)
-            - 0.2f * mask[i] * (center - src[i]);
+        for (; y < height; y += height / INPAINT_UNROLL_Y) {
+            center = tempSrc[y * width + x];
+            i = y * width + x;
+            tempSrc[i] = center
+                + 0.2f
+                * (tempSrc[max(0, y - 1) * width + x]
+                    + tempSrc[min(height - 1, y + 1) * width + x]
+                    + tempSrc[y * width + max(0, x - 1)]
+                    + tempSrc[y * width + min(width - 1, x + 1)]
+                    - 4.0f * center)
+                - 0.2f * mask[i] * (center - src[i]);
+        }
     }
 }

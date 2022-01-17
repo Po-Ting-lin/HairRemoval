@@ -4,144 +4,13 @@ HairRemoval::HairRemoval(int width, int height, int channel) {
     _detectionInfo = HairDetectionInfo(width, height, channel);
     _inpaintInfo = HairInpaintInfo(width, height, channel);
     // temporarily move to here, because it's slow in CUDA 11)
-    gpuErrorCheck(cufftPlan2d(&_fftPlanFwd, _detectionInfo.FFTH, _detectionInfo.FFTW, CUFFT_R2C));
-    gpuErrorCheck(cufftPlan2d(&_fftPlanInv, _detectionInfo.FFTH, _detectionInfo.FFTW, CUFFT_C2R));
+    Check(cufftPlan2d(&_fftPlanFwd, _detectionInfo.FFTH, _detectionInfo.FFTW, CUFFT_R2C));
+    Check(cufftPlan2d(&_fftPlanInv, _detectionInfo.FFTH, _detectionInfo.FFTW, CUFFT_C2R));
 }
 
 HairRemoval::~HairRemoval() {
-    gpuErrorCheck(cufftDestroy(_fftPlanInv));
-    gpuErrorCheck(cufftDestroy(_fftPlanFwd));
-}
-
-void HairRemoval::Process(cv::Mat& src, cv::Mat& dst) {
-    cv::Mat mask(cv::Size(src.cols, src.rows), CV_8U);
-#if L2_TIMER
-    auto t1 = getTime();
-#endif
-	_hairDetection(src, mask);
-#if L2_TIMER
-    auto t2 = getTime();
-#endif
-    cv::threshold(mask, mask, 0, 255, cv::THRESH_BINARY | cv::THRESH_OTSU);
-#if L2_TIMER
-    auto t3 = getTime();
-#endif
-    //_cleanIsolatedComponent(mask, hair_detection_info);
-    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3), cv::Point(-1, -1));
-    cv::morphologyEx(mask, mask, cv::MORPH_DILATE, kernel, cv::Point(-1, -1), 1);
-#if L2_TIMER
-    auto t4 = getTime();
-#endif
-	_hairInpainting(src, mask, dst);
-#if L2_TIMER
-    auto t5 = getTime();
-    printTime(t1, t2, "main -- detection");
-    printTime(t2, t3, "main -- entropyThesholding");
-    printTime(t3, t4, "main -- cleanIsolatedComponent & morphology");
-    printTime(t4, t5, "main -- inpainting");
-#endif
-
-#if PEEK_MASK
-    displayImage(mask, "mask", false);
-#endif
-}
-
-void HairRemoval::_hairDetection(cv::Mat& src, cv::Mat& dst) {
-    HairDetectionInfo info = _detectionInfo;
-    uchar* src_ptr = src.data;
-    const int fftH = info.FFTH;
-    const int fftW = info.FFTW;
-    const unsigned long src_size = src.cols * src.rows * src.channels();
-    const unsigned long src_byte_size = src_size * sizeof(uchar);
-    const unsigned long src_c_size = src.cols * src.rows;
-    const unsigned long src_c_byte_size = src_c_size * sizeof(float);
-    float* d_PaddedData;
-    float* d_Kernel;
-    float* d_PaddedKernel;
-    float* d_DepthResult;
-    float* d_src_c_ptr;
-    uchar* d_Result;
-    uchar* d_src_ptr;
-    fComplex* d_DataSpectrum;
-    fComplex* d_KernelSpectrum;
-    fComplex* d_TempSpectrum;
-
-    // allocate
-    gpuErrorCheck(cudaMalloc((uchar**)&d_src_ptr, src_byte_size));
-    gpuErrorCheck(cudaMalloc((float**)&d_src_c_ptr, src_c_byte_size));
-    gpuErrorCheck(cudaMalloc((void**)&d_Kernel, info.KernelH * info.KernelW * info.NumberOfFilter * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_PaddedData, fftH * fftW * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_PaddedKernel, fftH * fftW * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_DepthResult, fftH * fftW * info.NumberOfFilter * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((void**)&d_Result, info.Height * info.Width * sizeof(uchar)));
-    gpuErrorCheck(cudaMalloc((void**)&d_DataSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));
-    gpuErrorCheck(cudaMalloc((void**)&d_KernelSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));
-    gpuErrorCheck(cudaMalloc((void**)&d_TempSpectrum, fftH * (fftW / 2 + 1) * sizeof(fComplex)));
-
-    // init data
-    float* h_kernels = _initGaborFilterCube(info);
-
-    // H to D
-    gpuErrorCheck(cudaMemcpy(d_Kernel, h_kernels, info.KernelH * info.KernelW * info.NumberOfFilter * sizeof(float), cudaMemcpyHostToDevice));
-    gpuErrorCheck(cudaMemcpy(d_src_ptr, src_ptr, src_byte_size, cudaMemcpyHostToDevice));
-    
-    dim3 block(DETECT_TILE_X, DETECT_TILE_Y / DETECT_UNROLL_Y);
-    dim3 grid(iDivUp(src.cols, DETECT_TILE_X), iDivUp(src.rows, DETECT_TILE_Y));
-    extractLChannelKernel << < grid, block >> > (d_src_ptr, d_src_c_ptr, src.cols, src.rows, src.channels());
-    gpuErrorCheck(cudaDeviceSynchronize());
-
-    _padDataClampToBorder(d_PaddedData, d_src_c_ptr);
-
-    // FFT data
-    gpuErrorCheck(cufftExecR2C(_fftPlanFwd, (cufftReal*)d_PaddedData, (cufftComplex*)d_DataSpectrum));
-    gpuErrorCheck(cudaDeviceSynchronize());
-
-    for (int i = 0; i < info.NumberOfFilter; i++) {
-        int kernel_offset = i * info.KernelH * info.KernelW;
-        int data_offset = i * fftH * fftW;
-        _padKernel(d_PaddedKernel, &(d_Kernel[kernel_offset]));
-
-        // FFT kernel
-        gpuErrorCheck(cufftExecR2C(_fftPlanFwd, (cufftReal*)d_PaddedKernel, (cufftComplex*)d_KernelSpectrum));
-        gpuErrorCheck(cudaDeviceSynchronize());
-
-        // mul
-        _modulateAndNormalize(d_TempSpectrum, d_DataSpectrum, d_KernelSpectrum, 1);
-        gpuErrorCheck(cufftExecC2R(_fftPlanInv, (cufftComplex*)d_TempSpectrum, (cufftReal*)(&d_DepthResult[data_offset])));
-        gpuErrorCheck(cudaDeviceSynchronize());
-    }
-    _cubeReduction(d_DepthResult, d_Result);
-    gpuErrorCheck(cudaMemcpy(dst.data, d_Result, info.Height * info.Width * sizeof(uchar), cudaMemcpyDeviceToHost));
-
-    // free
-    gpuErrorCheck(cudaFree(d_src_ptr));
-    gpuErrorCheck(cudaFree(d_DataSpectrum));
-    gpuErrorCheck(cudaFree(d_KernelSpectrum));
-    gpuErrorCheck(cudaFree(d_PaddedData));
-    gpuErrorCheck(cudaFree(d_PaddedKernel));
-    gpuErrorCheck(cudaFree(d_TempSpectrum));
-    gpuErrorCheck(cudaFree(d_src_c_ptr));
-    gpuErrorCheck(cudaFree(d_Kernel));
-    gpuErrorCheck(cudaFree(d_DepthResult));
-}
-
-void HairRemoval::_hairInpainting(cv::Mat& src, cv::Mat& mask, cv::Mat& dst) {
-    HairInpaintInfo info = _inpaintInfo;
-    bool* normalized_mask = (bool*)malloc(info.NumberOfC1Elements * sizeof(bool));
-    float* raw_dst = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-    float* normalized_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-    float* normalized_masked_src = (float*)malloc(info.NumberOfC3Elements * sizeof(float));
-    uchar* h_dst_RGB_array = (uchar*)malloc(info.NumberOfC3Elements * sizeof(uchar));
-    _normalizeImage(src, mask, normalized_src, normalized_mask, normalized_masked_src);
-    _pdeHeatDiffusion(normalized_mask, normalized_masked_src, raw_dst);
-    //_pdeHeatDiffusionSmemGPU(d_normalized_mask, d_normalized_masked_src, d_normalized_masked_src_temp);
-    _convertToMatArrayFormat(raw_dst, h_dst_RGB_array);
-    cv::Mat dst_mat(info.Height, info.Width, CV_8UC3, h_dst_RGB_array);
-    dst = dst_mat;
-
-    free(normalized_src);
-    free(normalized_mask);
-    free(normalized_masked_src);
+    //Check(cufftDestroy(_fftPlanInv));
+    //Check(cufftDestroy(_fftPlanFwd));
 }
 
 float* HairRemoval::_initGaborFilterCube(HairDetectionInfo para) {
@@ -224,7 +93,34 @@ void HairRemoval::_cubeReduction(float* d_Src, uchar* d_Dst) {
         _detectionInfo.Width,
         _detectionInfo.NumberOfFilter
         );
+    Check(cudaDeviceSynchronize());
     getLastCudaError("CubeReductionKernel<<<>>> execution failed\n");
+}
+
+void HairRemoval::_binarization(uchar* d_Src, int threshold) {
+    dim3 block(DETECT_TILE_X, DETECT_TILE_Y);
+    dim3 grid(iDivUp(_detectionInfo.Width, DETECT_TILE_X), iDivUp(_detectionInfo.Height, DETECT_TILE_Y));
+    binarizeKernel << <grid, block >> > (
+        d_Src,
+        _detectionInfo.Width,
+        _detectionInfo.Height,
+        threshold
+        );
+    Check(cudaDeviceSynchronize());
+    getLastCudaError("CubeReductionKernel<<<>>> execution failed\n");
+}
+
+void HairRemoval::_dilation(uchar* d_Src, bool* d_Dst) {
+    dim3 block(DETECT_TILE_X, DETECT_TILE_Y);
+    dim3 grid(iDivUp(_detectionInfo.Width, DETECT_TILE_X), iDivUp(_detectionInfo.Height, DETECT_TILE_Y));
+    NaiveDilationKernel << <grid, block >> > (
+        d_Src,
+        d_Dst,
+        _detectionInfo.Width,
+        _detectionInfo.Height
+        );
+    Check(cudaDeviceSynchronize());
+    getLastCudaError("NaiveDilationKernel<<<>>> execution failed\n");
 }
 
 void HairRemoval::_cleanIsolatedComponent(cv::Mat& src) {
@@ -260,93 +156,110 @@ void HairRemoval::_cleanIsolatedComponent(cv::Mat& src) {
     src = dst;
 }
 
-void HairRemoval::_normalizeImage(cv::Mat& srcImage, cv::Mat& srcMask, float* dstImage, bool* dstMask, float* dstMaskImage) {
-    HairInpaintInfo info = _inpaintInfo;
-    const int width = srcImage.cols;
-    const int height = srcImage.rows;
-    uchar* src_image_ptr = srcImage.data;
-    uchar* src_mask_ptr = srcMask.data;
-#pragma omp parallel for
-    for (int i = 0; i < height * width; i++) {
-        dstMask[i] = src_mask_ptr[i] == 0;
-    }
-    int pixel = 0;
-    int index = 0;
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            index = y * (width * 3) + (x * 3);
-            for (int k = 0; k < 3; k++) {
-                pixel = src_image_ptr[index + k];
-                if (pixel > info.MaxRgb[k]) info.MaxRgb[k] = pixel;
-                if (pixel < info.MinRgb[k]) info.MinRgb[k] = pixel;
-            }
-        }
-    }
-    int range_list[] = { info.MaxRgb[0] - info.MinRgb[0], info.MaxRgb[1] - info.MinRgb[1], info.MaxRgb[2] - info.MinRgb[2] };
-    for (int k = 0; k < 3; k++) {
-        int channel_offset = k * width * height;
-#pragma omp parallel for collapse (2)
-        for (int y = 0; y < height; y++) {
-            for (int x = 0; x < width; x++) {
-                int maskI = y * width + x;
-                int srcI = y * (width * 3) + (x * 3) + k;
-                int dstI = channel_offset + maskI;
-                float value = ((float)src_image_ptr[srcI] - info.MinRgb[k]) / range_list[k];
-                dstImage[dstI] = value;
-                dstMaskImage[dstI] = dstMask[maskI] ? value : 1.0f;
-            }
-        }
-
-        for (int x = 0; x < width; x += width - 1) {
-            for (int y = 0; y < height; y++) {
-                int maskI = y * width + x;
-                int dstI = channel_offset + maskI;
-                dstMaskImage[dstI] = dstImage[dstI];
-            }
-        }
-        for (int y = 0; y < height; y += height - 1) {
-            for (int x = 0; x < width; x++) {
-                int maskI = y * width + x;
-                int dstI = channel_offset + maskI;
-                dstMaskImage[dstI] = dstImage[dstI];
-            }
-        }
-    }
+void HairRemoval::_makeHistogram(uchar* d_src, int* h_histogram) {
+    const int size = _detectionInfo.Height * _detectionInfo.Width;
+    thrust::device_vector<uchar> src(d_src, d_src + size); // memcpy D to D
+    thrust::device_vector<int> dst(DYNAMICRANGE, 0); // malloc
+    // sort data to bring equal elements together
+    thrust::sort(src.begin(), src.end());
+    // find the end of each bin of values
+    thrust::counting_iterator<int> search_begin(0);
+    thrust::upper_bound(src.begin(), src.end(), search_begin, search_begin + DYNAMICRANGE, dst.begin());
+    // compute the histogram by taking differences of the cumulative histogram
+    thrust::adjacent_difference(dst.begin(), dst.end(), dst.begin());
+    thrust::copy(dst.begin(), dst.end(), h_histogram); // memcpy D to H
 }
 
-void HairRemoval::_pdeHeatDiffusion(bool* normalized_mask, float* normalized_masked_src, float* h_dst) {
+int HairRemoval::_findOtsuThreshold(int* h_histogram) {
+    float all_u = 0;
+    float u1 = 0;
+    float w1 = 0;
+    float max_variance = 0;
+    int threshold = 0;
+    float scale = 1.0f / (_detectionInfo.Width * _detectionInfo.Height);
+    for (int i = 0; i < DYNAMICRANGE; i++)
+        all_u += i * h_histogram[i];
+    all_u *= scale;
+    for (int i = 0; i < DYNAMICRANGE; i++) {
+        float wi, w2, u2, variance;
+        wi = h_histogram[i] * scale; // normalize count
+        u1 *= w1;
+        w1 += wi;
+        w2 = 1.0f - w1;
+        if (std::min(w1, w2) < FLT_EPSILON || std::max(w1, w2) > 1.0f - FLT_EPSILON) continue;
+        u1 = (u1 + i * wi) / w1;
+        u2 = (all_u - w1 * u1) / w2;
+        variance = w1 * w2 * (u1 - u2) * (u1 - u2);
+        if (variance > max_variance)
+        {
+            max_variance = variance;
+            threshold = i;
+        }
+    }
+    return threshold;
+}
+
+void HairRemoval::_normalizeImage(float* dstMaskImage) {
+    const int size = _inpaintInfo.Width * _inpaintInfo.Height;
+    thrust::device_ptr<uchar> d_ptr = thrust::device_pointer_cast(_detectionInfo.SplitSrc);
+
+    dim3 block(NORMALIZED_TILE);
+    dim3 grid(iDivUp(size, NORMALIZED_TILE));
+
+    for (int k = 0; k < _inpaintInfo.Channels; k++) {
+        const int offset = k * size;
+        thrust::pair<thrust::device_vector<uchar>::iterator, thrust::device_vector<uchar>::iterator> tuple;
+        tuple = thrust::minmax_element(d_ptr + offset, d_ptr + offset + size);
+        uchar min = *(tuple.first);
+        uchar max = *(tuple.second);
+        _inpaintInfo.MaxRgb[k] = max;
+        _inpaintInfo.MinRgb[k] = min;
+        uchar* split_src = _detectionInfo.SplitSrc + offset;
+        float* dst = dstMaskImage + offset;
+        makeMaskSrcImageKernel << <grid, block >> > (split_src, _detectionInfo.Mask, dst, (float)max, (float)min, size);
+        Check(cudaDeviceSynchronize());
+    }
+    NotKernel << <grid, block >> > (_detectionInfo.Mask, size);
+    Check(cudaDeviceSynchronize());
+}
+
+void HairRemoval::_pdeHeatDiffusion(float* d_masked_src, uchar* h_dst) {
     HairInpaintInfo info = _inpaintInfo;
-    bool* d_normalized_mask;
-    float* d_normalized_masked_src;
-    float* d_normalized_masked_src_temp;
-    gpuErrorCheck(cudaMalloc((bool**)&d_normalized_mask, info.NumberOfC1Elements * sizeof(bool)));
-    gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float)));
+    float* d_processed_mask;
+    uchar* d_raw_dst;
+    Check(cudaMalloc((uchar**)&d_raw_dst, info.NumberOfC3Elements * sizeof(uchar)));
+    Check(cudaMalloc((float**)&d_processed_mask, info.NumberOfC3Elements * sizeof(float)));
 
     cudaStream_t* streams = new cudaStream_t[info.Channels];
     for (int i = 0; i < info.Channels; i++) 
         cudaStreamCreate(&streams[i]);
-    gpuErrorCheck(cudaMemcpy(d_normalized_mask, normalized_mask, info.NumberOfC1Elements * sizeof(bool), cudaMemcpyHostToDevice));
 
     dim3 block(INPAINT_TILE_X, INPAINT_TILE_Y / INPAINT_UNROLL_Y);
     dim3 grid(iDivUp(info.Width, INPAINT_TILE_X), iDivUp(info.Height / INPAINT_UNROLL_Y, INPAINT_TILE_Y / INPAINT_UNROLL_Y));
 
     for (int k = 0; k < info.Channels; k++) {
         int offset = k * info.Width * info.Height;
-        gpuErrorCheck(cudaMemcpyAsync(d_normalized_masked_src + offset, normalized_masked_src + offset, info.NumberOfC1Elements * sizeof(float), cudaMemcpyHostToDevice, streams[k]));
-        gpuErrorCheck(cudaMemcpyAsync(d_normalized_masked_src_temp + offset, d_normalized_masked_src + offset, info.NumberOfC1Elements * sizeof(float), cudaMemcpyDeviceToDevice, streams[k]));
-
-        for (int i = 0; i < info.Iters; i++) {
-            pdeHeatDiffusionKernel << <grid, block, 0, streams[k]>> > (d_normalized_mask, d_normalized_masked_src + offset, d_normalized_masked_src_temp + offset, info.Width, info.Height);
+        float* image = d_masked_src + offset;
+        float* processed_image = d_processed_mask + offset;
+        Check(cudaMemcpyAsync(processed_image, image, info.NumberOfC1Elements * sizeof(float), cudaMemcpyDeviceToDevice, streams[k]));
+        for (int i = 0; i < info.Iters / INPAINT_ITER_UNROLL; i++) {
+            pdeHeatDiffusionKernel << <grid, block, 0, streams[k]>> > (_detectionInfo.Mask, image, processed_image, info.Width, info.Height);
         }
     }
-
-    gpuErrorCheck(cudaMemcpy(h_dst, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
+    Check(cudaDeviceSynchronize());
+    const int size = info.Width * info.Height;
+    dim3 block2(INPAINT_TILE_X, INPAINT_TILE_Y);
+    dim3 grid2(iDivUp(info.Width, INPAINT_TILE_X), iDivUp(info.Height, INPAINT_TILE_Y));
+    make8UDstKernel << < grid2, block2>>>(d_processed_mask, d_raw_dst,
+        (float)_inpaintInfo.MaxRgb[0], (float)_inpaintInfo.MinRgb[0],
+        (float)_inpaintInfo.MaxRgb[1], (float)_inpaintInfo.MinRgb[1],
+        (float)_inpaintInfo.MaxRgb[2], (float)_inpaintInfo.MinRgb[2],
+        info.Width, info.Height);
+    Check(cudaMemcpy(h_dst, d_raw_dst, info.NumberOfC3Elements * sizeof(uchar), cudaMemcpyDeviceToHost));
     for (int i = 0; i < info.Channels; i++) 
         cudaStreamDestroy(streams[i]);
-    gpuErrorCheck(cudaFree(d_normalized_mask));
-    gpuErrorCheck(cudaFree(d_normalized_masked_src));
-    gpuErrorCheck(cudaFree(d_normalized_masked_src_temp));
+    Check(cudaFree(d_processed_mask));
+    Check(cudaFree(d_raw_dst));
 }
 
 void HairRemoval::_pdeHeatDiffusionSmem(bool* normalized_mask, float* normalized_masked_src, float* h_dst) {
@@ -354,13 +267,13 @@ void HairRemoval::_pdeHeatDiffusionSmem(bool* normalized_mask, float* normalized
     bool* d_normalized_mask;
     float* d_normalized_masked_src;
     float* d_normalized_masked_src_temp;
-    gpuErrorCheck(cudaMalloc((bool**)&d_normalized_mask, info.NumberOfC1Elements * sizeof(bool)));
-    gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float)));
-    gpuErrorCheck(cudaMalloc((float**)&d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float)));
+    Check(cudaMalloc((bool**)&d_normalized_mask, info.NumberOfC1Elements * sizeof(bool)));
+    Check(cudaMalloc((float**)&d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float)));
+    Check(cudaMalloc((float**)&d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float)));
 
-    gpuErrorCheck(cudaMemcpy(d_normalized_mask, normalized_mask, info.NumberOfC1Elements * sizeof(bool), cudaMemcpyHostToDevice));
-    gpuErrorCheck(cudaMemcpy(d_normalized_masked_src, normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyHostToDevice));
-    gpuErrorCheck(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice));
+    Check(cudaMemcpy(d_normalized_mask, normalized_mask, info.NumberOfC1Elements * sizeof(bool), cudaMemcpyHostToDevice));
+    Check(cudaMemcpy(d_normalized_masked_src, normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyHostToDevice));
+    Check(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice));
 
 
     assert(info.Width / INPAINT_SMEM_TILE_X * STEP == 0);
@@ -375,28 +288,10 @@ void HairRemoval::_pdeHeatDiffusionSmem(bool* normalized_mask, float* normalized
             pdeHeatDiffusionSMEMKernel << <grid, block >> > (d_normalized_mask, src, dst, info.Width, info.Height);
         }
     }
-
-    gpuErrorCheck(cudaMemcpy(h_dst, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
-    gpuErrorCheck(cudaFree(d_normalized_mask));
-    gpuErrorCheck(cudaFree(d_normalized_masked_src));
-    gpuErrorCheck(cudaFree(d_normalized_masked_src_temp));
-}
-
-void HairRemoval::_convertToMatArrayFormat(float* srcImage, uchar* dstImage) {
-    HairInpaintInfo info = _inpaintInfo;
-    for (int k = 0; k < info.Channels; k++) {
-        int channel_offset = k * info.Width * info.Height;
-        int range = info.MaxRgb[k] - info.MinRgb[k];
-        int offset = info.MinRgb[k];
-#pragma omp parallel for collapse (2)
-        for (int y = 0; y < info.Height; y++) {
-            for (int x = 0; x < info.Width; x++) {
-                int dstI = y * (info.Width * info.Channels) + (x * info.Channels) + k;
-                int srcI = channel_offset + y * info.Width + x;
-                dstImage[dstI] = (uchar)(range * srcImage[srcI] + offset);
-            }
-        }
-    }
+    Check(cudaMemcpy(h_dst, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
+    Check(cudaFree(d_normalized_mask));
+    Check(cudaFree(d_normalized_masked_src));
+    Check(cudaFree(d_normalized_masked_src_temp));
 }
 
 

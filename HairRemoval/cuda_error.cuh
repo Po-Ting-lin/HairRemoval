@@ -4,7 +4,7 @@
 #include <iostream>
 #include <stdio.h>
 
-#define gpuErrorCheck(ans) { gpuAssert((ans), __FILE__, __LINE__, true); }
+#define Check(ans) { gpuAssert((ans), __FILE__, __LINE__, true); }
 #define getLastCudaError(msg) {__getLastCudaError (msg, __FILE__, __LINE__);}
 
 template< typename T >

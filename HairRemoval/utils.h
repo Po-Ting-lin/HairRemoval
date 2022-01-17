@@ -137,6 +137,21 @@ static void displayImage(float* src, int width, int height, bool mag) {
     cv::waitKey(0);
 }
 
+static void displayImage(bool* image, int width, int height, const char* name) {
+    cv::Mat Out(cv::Size(width, height), CV_8U);
+
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            if (image[y * width + x]) Out.data[y * width + x] = 255;
+            else Out.data[y * width + x] = 0;
+        }
+    }
+
+    namedWindow(name, cv::WINDOW_AUTOSIZE);
+    cv::imshow(name, Out);
+    cv::waitKey(0);
+}
+
 static void displayImage(const cv::Mat& image, const char* name, bool mag) {
 	cv::Mat Out;
 	if (mag) {

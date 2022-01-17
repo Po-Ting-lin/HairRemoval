@@ -12,7 +12,7 @@ Implementation of hair removal in CUDA. The methods of hair detection refer to t
 Method     |Image Size     | Elapsed Time
 -----------|:-------------:|--------------
 Naive      |1.2 Megapixels |  18789 ms
-GPU        |1.2 Megapixels |  79 ms
+GPU        |1.2 Megapixels |  29 ms
   
 ![](/sample/1.jpg)
 
