@@ -1,8 +1,11 @@
 #include "hairRemoval.cuh"
 
-HairRemoval::HairRemoval(int width, int height, int channel) {
-    _detectionInfo = HairDetectionInfo(width, height, channel);
-    _inpaintInfo = HairInpaintInfo(width, height, channel);
+texture<float, cudaTextureType2D, cudaReadModeElementType> texIn;
+texture<float, cudaTextureType2D, cudaReadModeElementType> texOut;
+
+HairRemoval::HairRemoval(int width, int height, int channel, float alpha, float beta, float hairWidth, int iterations) {
+    _detectionInfo = HairDetectionInfo(width, height, channel, alpha, beta, hairWidth);
+    _inpaintInfo = HairInpaintInfo(width, height, channel, iterations);
     // temporarily move to here, because it's slow in CUDA 11)
     Check(cufftPlan2d(&_fftPlanFwd, _detectionInfo.FFTH, _detectionInfo.FFTW, CUFFT_R2C));
     Check(cufftPlan2d(&_fftPlanInv, _detectionInfo.FFTH, _detectionInfo.FFTW, CUFFT_C2R));
@@ -69,7 +72,6 @@ void HairRemoval::_padKernel(float* d_Dst, float* d_Src) {
 }
 
 void HairRemoval::_modulateAndNormalize(fComplex* d_Dst, fComplex* d_DataSrc, fComplex* d_KernelSrc, int padding) {
-    assert(fftW % 2 == 0);
     const int dataSize = _detectionInfo.FFTH * (_detectionInfo.FFTW / 2 + padding);
     modulateAndNormalizeKernel << <iDivUp(dataSize, 256), 256 >> > (
         d_Dst,
@@ -262,36 +264,123 @@ void HairRemoval::_pdeHeatDiffusion(float* d_masked_src, uchar* h_dst) {
     Check(cudaFree(d_raw_dst));
 }
 
-void HairRemoval::_pdeHeatDiffusionSmem(bool* normalized_mask, float* normalized_masked_src, float* h_dst) {
+void HairRemoval::_pdeHeatDiffusionStream(float* d_masked_src, uchar* h_dst) {
     HairInpaintInfo info = _inpaintInfo;
-    bool* d_normalized_mask;
-    float* d_normalized_masked_src;
-    float* d_normalized_masked_src_temp;
-    Check(cudaMalloc((bool**)&d_normalized_mask, info.NumberOfC1Elements * sizeof(bool)));
-    Check(cudaMalloc((float**)&d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float)));
-    Check(cudaMalloc((float**)&d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float)));
+    float* d_processed_mask;
+    uchar* d_raw_dst;
+    Check(cudaMalloc((uchar**)&d_raw_dst, info.NumberOfC3Elements * sizeof(uchar)));
+    Check(cudaMalloc((float**)&d_processed_mask, info.NumberOfC3Elements * sizeof(float)));
 
-    Check(cudaMemcpy(d_normalized_mask, normalized_mask, info.NumberOfC1Elements * sizeof(bool), cudaMemcpyHostToDevice));
-    Check(cudaMemcpy(d_normalized_masked_src, normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyHostToDevice));
-    Check(cudaMemcpy(d_normalized_masked_src_temp, d_normalized_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice));
+    cudaStream_t* streams = new cudaStream_t[info.Channels];
+    for (int i = 0; i < info.Channels; i++)
+        cudaStreamCreate(&streams[i]);
 
+    dim3 block(INPAINT_TILE_X, INPAINT_TILE_Y / INPAINT_UNROLL_Y);
+    dim3 grid(iDivUp(info.Width, INPAINT_TILE_X), iDivUp(info.Height / INPAINT_UNROLL_Y, INPAINT_TILE_Y / INPAINT_UNROLL_Y));
 
-    assert(info.Width / INPAINT_SMEM_TILE_X * STEP == 0);
-    assert(info.Height / INPAINT_SMEM_TILE_Y * STEP == 0);
-    dim3 block(INPAINT_SMEM_TILE_X, INPAINT_SMEM_TILE_Y);
-    dim3 grid(iDivUp(info.Width, INPAINT_SMEM_TILE_X * STEP), iDivUp(info.Height, INPAINT_SMEM_TILE_Y * STEP));
+    int offset = info.Width * info.Height;
+    Check(cudaMemcpyAsync(d_processed_mask, d_masked_src, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToDevice, streams[0]));
+    Check(cudaStreamSynchronize(streams[0]));
+
+    for (int i = 0; i < info.Iters / INPAINT_ITER_UNROLL; i++) {
+        pdeHeatDiffusionKernel << <grid, block, 0, streams[0] >> > (_detectionInfo.Mask, d_masked_src, d_processed_mask, info.Width, info.Height);
+        pdeHeatDiffusionKernel << <grid, block, 0, streams[1] >> > (_detectionInfo.Mask, d_masked_src + 1 * offset, d_processed_mask + 1 * offset, info.Width, info.Height);
+        pdeHeatDiffusionKernel << <grid, block, 0, streams[2] >> > (_detectionInfo.Mask, d_masked_src + 2 * offset, d_processed_mask + 2 * offset, info.Width, info.Height);
+    }
+    Check(cudaDeviceSynchronize());
+    const int size = info.Width * info.Height;
+    dim3 block2(INPAINT_TILE_X, INPAINT_TILE_Y);
+    dim3 grid2(iDivUp(info.Width, INPAINT_TILE_X), iDivUp(info.Height, INPAINT_TILE_Y));
+    make8UDstKernel << < grid2, block2 >> > (d_processed_mask, d_raw_dst,
+        (float)_inpaintInfo.MaxRgb[0], (float)_inpaintInfo.MinRgb[0],
+        (float)_inpaintInfo.MaxRgb[1], (float)_inpaintInfo.MinRgb[1],
+        (float)_inpaintInfo.MaxRgb[2], (float)_inpaintInfo.MinRgb[2],
+        info.Width, info.Height);
+    Check(cudaMemcpy(h_dst, d_raw_dst, info.NumberOfC3Elements * sizeof(uchar), cudaMemcpyDeviceToHost));
+    for (int i = 0; i < info.Channels; i++)
+        cudaStreamDestroy(streams[i]);
+    Check(cudaFree(d_processed_mask));
+    Check(cudaFree(d_raw_dst));
+}
+
+void HairRemoval::_pdeHeatDiffusionTex(float* d_masked_src, uchar* h_dst) {
+    HairInpaintInfo info = _inpaintInfo;
+    float* d_in;
+    float* d_out;
+    uchar* d_raw_dst;
+    Check(cudaMalloc((uchar**)&d_raw_dst, info.NumberOfC3Elements * sizeof(uchar)));
+    Check(cudaMalloc((float**)&d_in, info.NumberOfC3Elements * sizeof(float)));
+    Check(cudaMalloc((float**)&d_out, info.NumberOfC3Elements * sizeof(float)));
+
+    dim3 block(INPAINT_TILE_X, INPAINT_TILE_Y);
+    dim3 grid(iDivUp(info.Width, INPAINT_TILE_X), iDivUp(info.Height, INPAINT_TILE_Y));
+    cudaChannelFormatDesc channel_desc = cudaCreateChannelDesc<float>();
 
     for (int k = 0; k < info.Channels; k++) {
-        float* src = d_normalized_masked_src + k * info.Width * info.Height;
-        float* dst = d_normalized_masked_src_temp + k * info.Width * info.Height;
-        for (int i = 0; i < info.Iters; i++) {
-            pdeHeatDiffusionSMEMKernel << <grid, block >> > (d_normalized_mask, src, dst, info.Width, info.Height);
+        int offset = k * info.Width * info.Height;
+        float* image = d_masked_src + offset; // d_masked_src is init const src
+        float* in = d_in + offset;
+        float* out = d_out + offset;
+        volatile bool is_dst_out = true;
+        Check(cudaBindTexture2D(0, texIn, in, channel_desc, info.Width, info.Height, info.Width * sizeof(float)));
+        Check(cudaBindTexture2D(0, texOut, out, channel_desc, info.Width, info.Height, info.Width * sizeof(float)));
+        for (int i = 0; i < 500; i++) {
+            float* cur_in;
+            float* cur_out;
+            if (is_dst_out) {
+                cur_in = in;
+                cur_out = out;
+            }
+            else {
+                cur_in = out;
+                cur_out = in;
+            }
+            copyConstSource << < grid, block >> > (_detectionInfo.Mask, image, cur_in, info.Width, info.Height);
+            pdeHeatDiffusionTexKernel << < grid, block >> > (cur_out, is_dst_out, info.Width, info.Height);
+            is_dst_out = !is_dst_out;
         }
+        Check(cudaUnbindTexture(texIn));
+        Check(cudaUnbindTexture(texOut));
     }
-    Check(cudaMemcpy(h_dst, d_normalized_masked_src_temp, info.NumberOfC3Elements * sizeof(float), cudaMemcpyDeviceToHost));
-    Check(cudaFree(d_normalized_mask));
-    Check(cudaFree(d_normalized_masked_src));
-    Check(cudaFree(d_normalized_masked_src_temp));
+    Check(cudaDeviceSynchronize());
+    const int size = info.Width * info.Height;
+    dim3 block2(INPAINT_TILE_X, INPAINT_TILE_Y);
+    dim3 grid2(iDivUp(info.Width, INPAINT_TILE_X), iDivUp(info.Height, INPAINT_TILE_Y));
+    make8UDstKernel << < grid2, block2 >> > (d_in, d_raw_dst,
+        (float)_inpaintInfo.MaxRgb[0], (float)_inpaintInfo.MinRgb[0],
+        (float)_inpaintInfo.MaxRgb[1], (float)_inpaintInfo.MinRgb[1],
+        (float)_inpaintInfo.MaxRgb[2], (float)_inpaintInfo.MinRgb[2],
+        info.Width, info.Height);
+    Check(cudaMemcpy(h_dst, d_raw_dst, info.NumberOfC3Elements * sizeof(uchar), cudaMemcpyDeviceToHost));
+    Check(cudaFree(d_in));
+    Check(cudaFree(d_raw_dst));
 }
+
+__global__ void pdeHeatDiffusionTexKernel(float* dst, bool isDstOut, int nx, int ny) {
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    if (x >= nx || y >= ny) return;
+    float t;
+    float l;
+    float c;
+    float r;
+    float b;
+    if (isDstOut) {
+        t = tex2D<float>(texIn, x, y - 1);
+        l = tex2D<float>(texIn, x - 1, y);
+        c = tex2D<float>(texIn, x, y);
+        r = tex2D<float>(texIn, x + 1, y);
+        b = tex2D<float>(texIn, x, y + 1);
+    }
+    else {
+        t = tex2D<float>(texOut, x, y - 1);
+        l = tex2D<float>(texOut, x - 1, y);
+        c = tex2D<float>(texOut, x, y);
+        r = tex2D<float>(texOut, x + 1, y);
+        b = tex2D<float>(texOut, x, y + 1);
+    }
+    dst[y * nx + x] = c + 0.25f * (t + b + r + l - 4.0f * c);
+}
+
 
 

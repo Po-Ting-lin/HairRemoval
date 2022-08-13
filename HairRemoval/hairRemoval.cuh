@@ -20,7 +20,7 @@
 
 class HairRemoval {
 public:
-	HairRemoval(int width, int height, int channel);
+	HairRemoval(int width, int height, int channel, float alpha, float beta, float hairWidth, int iterations);
 	~HairRemoval();
 	void Process(cv::Mat& src, cv::Mat& dst);
 private:
@@ -45,7 +45,6 @@ private:
 
 	void _normalizeImage(float* dstMaskImage);
 	void _pdeHeatDiffusion(float* d_normalized_masked_src, uchar* h_dst);
-	void _pdeHeatDiffusionSmem(bool* d_normalized_mask, float* d_normalized_masked_src, float* h_dst);
+	void _pdeHeatDiffusionStream(float* d_masked_src, uchar* h_dst);
+	void _pdeHeatDiffusionTex(float* d_normalized_masked_src, uchar* h_dst);
 };
-
-

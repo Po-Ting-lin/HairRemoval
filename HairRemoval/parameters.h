@@ -19,7 +19,7 @@
 #define LOAD_FLOAT(i) d_Src[i]
 
 #define L1_TIMER true
-#define L2_TIMER false
+#define L2_TIMER true
 #define L3_TIMER false
 #define DEBUG false
 #define PEEK_MASK false
@@ -48,15 +48,15 @@ public:
 	bool* Mask;
 
 	HairDetectionInfo() {}
-	HairDetectionInfo(int width, int height, int channels) {
+	HairDetectionInfo(int width, int height, int channels, float alpha, float beta, float hairWidth) {
 		Width = width;
 		Height = height;
 		Channels = channels;
-		NumberOfFilter = 8;
+		NumberOfFilter = 12;
 		MinArea = 10;
-		Alpha = 1.4f;
-		Beta = 0.5f;
-		HairWidth = 6.0f;
+		Alpha = alpha; // 1.4f
+		Beta = beta; // 0.5f
+		HairWidth = hairWidth; // 5.0f
 		RatioBBox = 4.0f;
 		SigmaX = 8.0f * (sqrt(2.0 * log(2) / CV_PI)) * HairWidth / Alpha / Beta / CV_PI;
 		SigmaY = 0.8f * SigmaX;
@@ -84,8 +84,8 @@ public:
 	uchar* MaxRgb;
 
 	HairInpaintInfo() {}
-	HairInpaintInfo(int width, int height, int channels) {
-		Iters = 700;
+	HairInpaintInfo(int width, int height, int channels, int iterations) {
+		Iters = iterations;
 		Width = width;
 		Height = height;
 		Channels = channels;

@@ -137,7 +137,7 @@ static void displayImage(float* src, int width, int height, bool mag) {
     cv::waitKey(0);
 }
 
-static void displayImage(bool* image, int width, int height, const char* name) {
+static void displayImage(bool* image, int width, int height, float ratio) {
     cv::Mat Out(cv::Size(width, height), CV_8U);
 
     for (int y = 0; y < height; y++) {
@@ -147,21 +147,18 @@ static void displayImage(bool* image, int width, int height, const char* name) {
         }
     }
 
-    namedWindow(name, cv::WINDOW_AUTOSIZE);
-    cv::imshow(name, Out);
+    cv::resize(Out, Out, cv::Size((int)(ratio * Out.cols), (int)(ratio * Out.rows)));
+    namedWindow("image", cv::WINDOW_AUTOSIZE);
+    cv::imshow("image", Out);
     cv::waitKey(0);
 }
 
-static void displayImage(const cv::Mat& image, const char* name, bool mag) {
-	cv::Mat Out;
-	if (mag) {
-		cv::resize(image, Out, cv::Size(image.cols/4, image.rows/4), 5, 5);
-	}
-	else {
-		image.copyTo(Out);
-	}
-	namedWindow(name, cv::WINDOW_AUTOSIZE);
-	cv::imshow(name, Out);
+static void displayImage(cv::Mat& image, float ratio) {
+    cv::Mat Out(cv::Size(image.cols, image.rows), CV_8U);
+    image.copyTo(Out);
+    cv::resize(Out, Out, cv::Size((int)(ratio * Out.cols), (int)(ratio * Out.rows)));
+	namedWindow("image", cv::WINDOW_AUTOSIZE);
+	cv::imshow("image", Out);
 	cv::waitKey(0);
 }
 

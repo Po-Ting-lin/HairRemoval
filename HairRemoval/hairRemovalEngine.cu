@@ -126,14 +126,17 @@ __global__ void NaiveDilationKernel(uchar* d_Src, bool* d_Dst, int width, int he
         d_Dst[y * width + max(x - 1, 0)] = 1;  // left
         d_Dst[y * width + min(width - 1, x + 1)] = 1; // right
     }
-
     __syncthreads();
 
-    if (d_Dst[y * width + x] == 1) {
-        d_Dst[max(y - 1, 0) * width + x] = 1; // up
-        d_Dst[min(height - 1, y + 1) * width + x] = 1; // down
-        d_Dst[y * width + max(x - 1, 0)] = 1;  // left
-        d_Dst[y * width + min(width - 1, x + 1)] = 1; // right
+#pragma unroll
+    for (int i = 0; i < 6; i++) {
+        if (d_Dst[y * width + x] == 1) {
+            d_Dst[max(y - 1, 0) * width + x] = 1; // up
+            d_Dst[min(height - 1, y + 1) * width + x] = 1; // down
+            d_Dst[y * width + max(x - 1, 0)] = 1;  // left
+            d_Dst[y * width + min(width - 1, x + 1)] = 1; // right
+        }
+        __syncthreads();
     }
 }
 
@@ -159,73 +162,6 @@ __global__ void NotKernel(bool* mask, int size) {
     mask[i] = !mask[i];
 }
 
-__global__ void pdeHeatDiffusionSMEMKernel(bool* mask, float* src, float* dst, int width, int height) {
-    __shared__ float smem[(INPAINT_SMEM_TILE_X + 2) * STEP][(INPAINT_SMEM_TILE_Y + 2) * STEP];
-    const int x = blockIdx.x * STEP * INPAINT_SMEM_TILE_X + threadIdx.x - INPAINT_SMEM_TILE_X;
-    const int y = blockIdx.y * STEP * INPAINT_SMEM_TILE_Y + threadIdx.y - INPAINT_SMEM_TILE_Y;;
-
-    // locate at each block (a thread block map into src pointer)
-    dst += y * width + x;
-    src += y * width + x;
-
-    // put into active space
-    for (int yy = 1; yy < 1 + STEP; yy++) {
-        for (int xx = 1; xx < 1 + STEP; xx++) {
-            smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
-                = dst[yy * INPAINT_SMEM_TILE_Y * width + xx * INPAINT_SMEM_TILE_X];
-        }
-    }
-
-    // corner space
-    smem[threadIdx.y][threadIdx.x] = dst[1 * INPAINT_SMEM_TILE_Y * width + 1 * INPAINT_SMEM_TILE_X];
-    smem[threadIdx.y][(1 + STEP) * INPAINT_SMEM_TILE_X + threadIdx.x] = dst[1 * INPAINT_SMEM_TILE_Y * width + STEP * INPAINT_SMEM_TILE_X];
-    smem[(1 + STEP) * INPAINT_SMEM_TILE_Y + threadIdx.y][threadIdx.x] = dst[STEP * INPAINT_SMEM_TILE_Y * width + 1 * INPAINT_SMEM_TILE_X];
-    smem[(1 + STEP) * INPAINT_SMEM_TILE_Y + threadIdx.y][(1 + STEP) * INPAINT_SMEM_TILE_X + threadIdx.x] = dst[STEP * INPAINT_SMEM_TILE_Y * width + STEP * INPAINT_SMEM_TILE_X];
-
-    // put into left space
-    for (int yy = 1; yy < STEP + 1; yy++) {
-        //if (y < height - BlockDim_y * (1 + Step) && y >= 0)
-        //    printf("%d - %d\n", y + yy * BlockDim_y, x);
-        smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][threadIdx.x] 
-            = (x >= 0) ? dst[yy * INPAINT_SMEM_TILE_Y * width] : 0;
-    }
-
-    // put into right space
-    for (int yy = 1; yy < STEP + 1; yy++) {
-        smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][(1 + STEP) * INPAINT_SMEM_TILE_X + threadIdx.x]
-            = (x < width - (1 + STEP) * INPAINT_SMEM_TILE_X) ? dst[yy * INPAINT_SMEM_TILE_Y * width + (1 + STEP) * INPAINT_SMEM_TILE_X] : 0;
-    }
-
-    // put into top space
-    for (int xx = 1; xx < STEP + 1; xx++) {
-        smem[threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
-            = (y >= 0) ? dst[xx * INPAINT_SMEM_TILE_X] : 0;
-    }
-
-    // put into bottom space
-    for (int xx = 1; xx < STEP + 1; xx++) {
-        smem[(1 + STEP) * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
-            = (y < height - (1 + STEP) * INPAINT_SMEM_TILE_Y) ? dst[(1 + STEP) * INPAINT_SMEM_TILE_Y * width + xx * INPAINT_SMEM_TILE_X] : 0;
-    }
-    __syncthreads();
-
-
-    for (int yy = 1; yy < 1 + STEP; yy++) {
-        for (int xx = 1; xx < 1 + STEP; xx++) {
-            int index = yy * INPAINT_SMEM_TILE_Y * width + xx * INPAINT_SMEM_TILE_X;
-            float center = smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x];
-            dst[index] =
-                center + 0.2f * (
-                  smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y + 1][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
-                + smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y - 1][xx * INPAINT_SMEM_TILE_X + threadIdx.x]
-                + smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x + 1]
-                + smem[yy * INPAINT_SMEM_TILE_Y + threadIdx.y][xx * INPAINT_SMEM_TILE_X + threadIdx.x - 1]
-                - 4.0f * center)
-                - 0.2f * mask[index] * (center - src[index]);
-        }
-    }
-}
-
 __global__ void pdeHeatDiffusionKernel(bool* mask, float* src, float* tempSrc, int width, int height) {
     const int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
@@ -247,4 +183,11 @@ __global__ void pdeHeatDiffusionKernel(bool* mask, float* src, float* tempSrc, i
                 - 0.2f * mask[i] * (center - src[i]);
         }
     }
+}
+
+__global__ void copyConstSource(bool* mask, float* constSrc, float* dst, int nx, int ny) {
+    int x = threadIdx.x + blockDim.x * blockIdx.x;
+    int y = threadIdx.y + blockDim.y * blockIdx.y;
+    if (x >= nx || y >= ny || !mask[y * nx + x]) return;
+    dst[y * nx + x] = constSrc[y * nx + x];
 }

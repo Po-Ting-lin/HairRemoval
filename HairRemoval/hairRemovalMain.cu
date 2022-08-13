@@ -91,7 +91,7 @@ void HairRemoval::_hairDetection(cv::Mat& src) {
 #if PEEK_MASK
     bool* peek_mask = new bool[info.Width * info.Height];
     Check(cudaMemcpy(peek_mask, _detectionInfo.Mask, info.Width * info.Height * sizeof(bool), cudaMemcpyDeviceToHost));
-    displayImage(peek_mask, info.Width, info.Height, "peek mask");
+    displayImage(peek_mask, info.Width, info.Height, 0.5f);
     delete[] peek_mask;
 #endif
 
@@ -114,6 +114,8 @@ void HairRemoval::_hairInpainting(cv::Mat& src, cv::Mat& dst) {
     float* d_masked_src;
     Check(cudaMalloc((void**)&d_masked_src, info.NumberOfC3Elements * sizeof(float)));
     _normalizeImage(d_masked_src);
-    _pdeHeatDiffusion(d_masked_src, dst.data);
+    //_pdeHeatDiffusion(d_masked_src, dst.data);
+    _pdeHeatDiffusionStream(d_masked_src, dst.data);
+    //_pdeHeatDiffusionTex(d_masked_src, dst.data);
     Check(cudaFree(d_masked_src));
 }

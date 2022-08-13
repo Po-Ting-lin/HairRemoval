@@ -25,6 +25,7 @@ __global__ void NaiveDilationKernel(uchar* d_Src, bool* d_Dst, int width, int he
 // hair inpainting
 __global__ void makeMaskSrcImageKernel(uchar* src, bool* mask, float* maskedSrc, float max, float min, int size);
 __global__ void NotKernel(bool* mask, int size);
-__global__ void pdeHeatDiffusionSMEMKernel(bool* mask, float* src, float* dst, int width, int height);
+__global__ void pdeHeatDiffusionTexKernel(float* dst, bool isDstOut, int nx, int ny);
 __global__ void pdeHeatDiffusionKernel(bool* mask, float* src, float* tempSrc, int width, int height);
 __global__ void make8UDstKernel(float* src, uchar* dst, float maxR, float minR, float maxG, float minG, float maxB, float minB, int width, int height);
+__global__ void copyConstSource(bool* mask, float* constSrc, float* dst, int nx, int ny);
