@@ -76,14 +76,18 @@ static const char* _cudaGetErrorEnum(cufftResult error)
     case CUFFT_UNALIGNED_DATA:
         return "CUFFT_UNALIGNED_DATA";
 
+#if CUFFT_VER_MAJOR < 12
     case CUFFT_INCOMPLETE_PARAMETER_LIST:
         return "CUFFT_INCOMPLETE_PARAMETER_LIST";
+#endif
 
     case CUFFT_INVALID_DEVICE:
         return "CUFFT_INVALID_DEVICE";
 
+#if CUFFT_VER_MAJOR < 12
     case CUFFT_PARSE_ERROR:
         return "CUFFT_PARSE_ERROR";
+#endif
 
     case CUFFT_NO_WORKSPACE:
         return "CUFFT_NO_WORKSPACE";
@@ -91,8 +95,10 @@ static const char* _cudaGetErrorEnum(cufftResult error)
     case CUFFT_NOT_IMPLEMENTED:
         return "CUFFT_NOT_IMPLEMENTED";
 
+#if CUFFT_VER_MAJOR < 12
     case CUFFT_LICENSE_ERROR:
         return "CUFFT_LICENSE_ERROR";
+#endif
     }
 
     return "<unknown>";

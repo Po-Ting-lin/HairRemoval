@@ -1,7 +1,22 @@
 #include "hairRemoval.cuh"
 
-texture<float, cudaTextureType2D, cudaReadModeElementType> texIn;
-texture<float, cudaTextureType2D, cudaReadModeElementType> texOut;
+static cudaTextureObject_t createPitch2DTexture(float* data, int width, int height) {
+    cudaResourceDesc res_desc = {};
+    res_desc.resType = cudaResourceTypePitch2D;
+    res_desc.res.pitch2D.devPtr = data;
+    res_desc.res.pitch2D.desc = cudaCreateChannelDesc<float>();
+    res_desc.res.pitch2D.width = width;
+    res_desc.res.pitch2D.height = height;
+    res_desc.res.pitch2D.pitchInBytes = width * sizeof(float);
+    cudaTextureDesc tex_desc = {};
+    tex_desc.addressMode[0] = cudaAddressModeClamp;
+    tex_desc.addressMode[1] = cudaAddressModeClamp;
+    tex_desc.filterMode = cudaFilterModePoint;
+    tex_desc.readMode = cudaReadModeElementType;
+    cudaTextureObject_t tex = 0;
+    Check(cudaCreateTextureObject(&tex, &res_desc, &tex_desc, nullptr));
+    return tex;
+}
 
 HairRemoval::HairRemoval(int width, int height, int channel, float alpha, float beta, float hairWidth, int iterations) {
     _detectionInfo = HairDetectionInfo(width, height, channel, alpha, beta, hairWidth);
@@ -314,7 +329,6 @@ void HairRemoval::_pdeHeatDiffusionTex(float* d_masked_src, uchar* h_dst) {
 
     dim3 block(INPAINT_TILE_X, INPAINT_TILE_Y);
     dim3 grid(iDivUp(info.Width, INPAINT_TILE_X), iDivUp(info.Height, INPAINT_TILE_Y));
-    cudaChannelFormatDesc channel_desc = cudaCreateChannelDesc<float>();
 
     for (int k = 0; k < info.Channels; k++) {
         int offset = k * info.Width * info.Height;
@@ -322,8 +336,8 @@ void HairRemoval::_pdeHeatDiffusionTex(float* d_masked_src, uchar* h_dst) {
         float* in = d_in + offset;
         float* out = d_out + offset;
         volatile bool is_dst_out = true;
-        Check(cudaBindTexture2D(0, texIn, in, channel_desc, info.Width, info.Height, info.Width * sizeof(float)));
-        Check(cudaBindTexture2D(0, texOut, out, channel_desc, info.Width, info.Height, info.Width * sizeof(float)));
+        cudaTextureObject_t tex_in = createPitch2DTexture(in, info.Width, info.Height);
+        cudaTextureObject_t tex_out = createPitch2DTexture(out, info.Width, info.Height);
         for (int i = 0; i < 500; i++) {
             float* cur_in;
             float* cur_out;
@@ -336,11 +350,11 @@ void HairRemoval::_pdeHeatDiffusionTex(float* d_masked_src, uchar* h_dst) {
                 cur_out = in;
             }
             copyConstSource << < grid, block >> > (_detectionInfo.Mask, image, cur_in, info.Width, info.Height);
-            pdeHeatDiffusionTexKernel << < grid, block >> > (cur_out, is_dst_out, info.Width, info.Height);
+            pdeHeatDiffusionTexKernel << < grid, block >> > (is_dst_out ? tex_in : tex_out, cur_out, info.Width, info.Height);
             is_dst_out = !is_dst_out;
         }
-        Check(cudaUnbindTexture(texIn));
-        Check(cudaUnbindTexture(texOut));
+        Check(cudaDestroyTextureObject(tex_in));
+        Check(cudaDestroyTextureObject(tex_out));
     }
     Check(cudaDeviceSynchronize());
     const int size = info.Width * info.Height;
@@ -356,7 +370,7 @@ void HairRemoval::_pdeHeatDiffusionTex(float* d_masked_src, uchar* h_dst) {
     Check(cudaFree(d_raw_dst));
 }
 
-__global__ void pdeHeatDiffusionTexKernel(float* dst, bool isDstOut, int nx, int ny) {
+__global__ void pdeHeatDiffusionTexKernel(cudaTextureObject_t texSrc, float* dst, int nx, int ny) {
     int x = threadIdx.x + blockDim.x * blockIdx.x;
     int y = threadIdx.y + blockDim.y * blockIdx.y;
     if (x >= nx || y >= ny) return;
@@ -365,20 +379,11 @@ __global__ void pdeHeatDiffusionTexKernel(float* dst, bool isDstOut, int nx, int
     float c;
     float r;
     float b;
-    if (isDstOut) {
-        t = tex2D<float>(texIn, x, y - 1);
-        l = tex2D<float>(texIn, x - 1, y);
-        c = tex2D<float>(texIn, x, y);
-        r = tex2D<float>(texIn, x + 1, y);
-        b = tex2D<float>(texIn, x, y + 1);
-    }
-    else {
-        t = tex2D<float>(texOut, x, y - 1);
-        l = tex2D<float>(texOut, x - 1, y);
-        c = tex2D<float>(texOut, x, y);
-        r = tex2D<float>(texOut, x + 1, y);
-        b = tex2D<float>(texOut, x, y + 1);
-    }
+    t = tex2D<float>(texSrc, x, y - 1);
+    l = tex2D<float>(texSrc, x - 1, y);
+    c = tex2D<float>(texSrc, x, y);
+    r = tex2D<float>(texSrc, x + 1, y);
+    b = tex2D<float>(texSrc, x, y + 1);
     dst[y * nx + x] = c + 0.25f * (t + b + r + l - 4.0f * c);
 }
 

@@ -1,48 +1,38 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.18)
+
+set(CMAKE_CUDA_ARCHITECTURES "86")
+
 project(hairProject LANGUAGES CXX CUDA VERSION 0.1.0)
 
-include(CTest)
-enable_testing()
+find_package(CUDAToolkit REQUIRED)
+find_package(OpenCV REQUIRED)
+find_package(OpenMP REQUIRED)
 
+file(GLOB SOURCES HairRemoval/*.cpp HairRemoval/*.cu)
+add_executable(hairRemoval ${SOURCES})
 
-set(CUFFT_INCLUDE_DIRS "/usr/local/cuda/include")
-
-# Using AVX, AVX intrinsic set
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2")
-
-file(GLOB hairRemovalLib STATIC
-  "HairRemoval/*.h"
-  "HairRemoval/*.cpp"
-  "HairRemoval/*.cuh"
-  "HairRemoval/*.cu"
+set_target_properties(hairRemoval PROPERTIES
+    CXX_STANDARD 17
 )
 
-add_executable(hairRemoval ${hairRemovalLib})
+target_compile_definitions(hairRemoval PRIVATE
+    SAMPLE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/sample"
+)
 
-find_package(CUDA REQUIRED)
-if (CUDA_FOUND)
-  message("Find CUDA")
-  include_directories(${CUFFT_INCLUDE_DIRS})
-  # link_directories("/usr/local/cuda/lib")
-  # set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -lcufft")
-else(CUDA_FOUND)
-  message("CUDA is not installed on this system.")
-endif()
+# Using AVX, AVX2 intrinsic set
+target_compile_options(hairRemoval PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:-mavx -mavx2>
+)
 
-find_package(OpenMP)
-if (OPENMP_FOUND)
-    message("Find OpenMp")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
-endif()
+target_link_libraries(hairRemoval PRIVATE
+    ${OpenCV_LIBS}
+    CUDA::cudart
+    CUDA::cufft
+    OpenMP::OpenMP_CXX
+)
 
-find_package( OpenCV REQUIRED )
-include_directories( ${OpenCV_INCLUDE_DIRS} )
-
-target_link_libraries( hairRemoval ${OpenCV_LIBS} cufft)
-
-set(CPACK_PROJECT_NAME ${PROJECT_NAME})
-set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
-include(CPack)
+target_include_directories(hairRemoval PRIVATE
+    ${OpenCV_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}
+    ${CUDAToolkit_INCLUDE_DIRS}/cccl
+)

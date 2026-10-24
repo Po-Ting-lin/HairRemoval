@@ -20,10 +20,10 @@ void gridSearch(cv::Mat& src, cv::Mat& dst) {
 }
 
 
-int main() {
+int main(int argc, char** argv) {
 	warmup();
 	cv::Mat src;
-	src = cv::imread(R"(../sample/demo1280.png)"); // alpha:1.5, beta:0.5, hairwidth:5, iters: 5000
+	src = cv::imread(argc > 1 ? argv[1] : SAMPLE_DIR "/demo1280.png"); // alpha:1.5, beta:0.5, hairwidth:5, iters: 5000
 	//src = cv::imread(R"(../sample/IMG_1040.jpg)"); // alpha:1.5, beta:0.5, hairwidth:10, iters: 2500
 	if (!src.data) {
 		std::cout << "Error: the image wasn't correctly loaded." << std::endl;
@@ -56,8 +56,11 @@ int main() {
 	std::cout << "Total time consume: " << elapsed_avg_time / iters * 1000.0 << " ms, in iterations " << iters << std::endl;
 #endif
 	/*******************************************************/
-	displayImage(dst, 0.5f);
-	//cv::imwrite("result.png", dst);
+	// Show the result only when an X display is available; otherwise save it.
+	if (std::getenv("DISPLAY") != nullptr)
+		displayImage(dst, 0.5f);
+	else
+		cv::imwrite("result.png", dst);
 
 	src.release();
 	dst.release();
