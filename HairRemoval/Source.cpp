@@ -56,8 +56,8 @@ int main(int argc, char** argv) {
 	std::cout << "Total time consume: " << elapsed_avg_time / iters * 1000.0 << " ms, in iterations " << iters << std::endl;
 #endif
 	/*******************************************************/
-	// Show the result only when an X display is available; otherwise save it.
-	if (std::getenv("DISPLAY") != nullptr)
+	// Show the result only when an X display and a highgui backend are available; otherwise save it.
+	if (std::getenv("DISPLAY") != nullptr && !cv::currentUIFramework().empty())
 		displayImage(dst, 0.5f);
 	else
 		cv::imwrite("result.png", dst);
